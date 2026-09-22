@@ -181,6 +181,12 @@ def to_transcript(content: list, image: Image.Image) -> str:
         crop.thumbnail((100, 50))
         pixels = list(crop.get_flattened_data())
         green = sum(g > r + 30 and g > b + 30 for r, g, b in pixels) / max(1, len(pixels))
+        # Weixin clock separators are short, centered, non-green lines. Restrict
+        # this to the observed HH:MM format; time text inside side bubbles stays.
+        if (re.fullmatch(r"(?:[01]?\d|2[0-3])[:：][0-5]\d", text.strip())
+                and 400 <= x0 < x1 <= 600 and 450 <= (x0 + x1) / 2 <= 550
+                and x1 - x0 <= 180 and green <= .25):
+            continue
         side = "我" if green > .25 else "对方" if x0 < 230 and x1 < 900 else "待确认"
         rows.append((y0, x0, f"{side}：{' '.join(text.split())}"))
     if not rows:

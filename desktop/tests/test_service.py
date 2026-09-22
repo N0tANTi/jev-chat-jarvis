@@ -48,9 +48,40 @@ class ServiceTests(unittest.TestCase):
         ]
         self.assertEqual(to_transcript(content, image), "对方：左侧长消息\n待确认：时间\n我：右侧")
 
+    def test_centered_clocks_do_not_enter_transcript(self):
+        image = Image.new("RGB", (1000, 500), "white")
+        content = [
+            {"type": "text", "text": "12:34", "bbox": [465, 100, 535, 130]},
+            {"type": "text", "text": "hello", "bbox": [60, 150, 200, 190]},
+            {"type": "text", "text": "18：56", "bbox": [465, 220, 535, 250]},
+        ]
+        self.assertEqual(to_transcript(content, image), "对方：hello")
+
+    def test_clock_in_left_or_green_bubble_is_preserved(self):
+        image = Image.new("RGB", (1000, 1000), "white")
+        ImageDraw.Draw(image).rectangle((460, 200, 540, 240), fill="#95ec69")
+        content = [
+            {"type": "text", "text": "12:34", "bbox": [60, 100, 180, 140]},
+            {"type": "text", "text": "18:56", "bbox": [460, 200, 540, 240]},
+            {"type": "text", "text": "明天12:34", "bbox": [460, 300, 540, 340]},
+        ]
+        self.assertEqual(to_transcript(content, image), "对方：12:34\n我：18:56\n待确认：明天12:34")
+
+    def test_clock_filter_allows_auto_flow_to_continue(self):
+        from desktop.tests import test_watcher
+        app = test_watcher.WatcherTests().app()
+        text = to_transcript([
+            {"type": "text", "text": "12:34", "bbox": [465, 100, 535, 130]},
+            {"type": "text", "text": "hello", "bbox": [60, 150, 200, 190]},
+        ], Image.new("RGB", (1000, 500), "white"))
+        app.events.put((app.generation.revision, "auto_ocr", text))
+        app.poll()
+        self.assertIsNotNone(app.watch)
+        self.assertTrue(any(call.args[0] == 150 for call in app.root.after.call_args_list))
+
     def test_invalid_boxes_not_silently_used(self):
         with self.assertRaises(ServiceError):
-            to_transcript([{"type": "text", "text": "x", "bbox": [0, 0, float("nan"), 20]}], Image.new("RGB", (100, 100)))
+              to_transcript([{"type": "text", "text": "x", "bbox": [0, 0, float("nan"), 20]}], Image.new("RGB", (100, 100)))
 
     def test_zip_only_reads_content_member_without_extracting(self):
         stream = io.BytesIO()
