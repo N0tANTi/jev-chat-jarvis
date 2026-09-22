@@ -39,3 +39,6 @@ secrets.*
 *.jks
 *.keystore
 keystore.properties
+
+.env
+.env.*

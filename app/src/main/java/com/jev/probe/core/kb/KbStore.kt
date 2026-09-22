@@ -160,9 +160,8 @@ class KbStore private constructor(context: Context) {
      *  - log is empty          → write all of S.
      *  - log tail matches the first k lines of S (k > 0) → the screen scrolled by
      *    (S.size - k) lines; append only that new tail.
-     *  - k is 0 and S shares nothing with P → the user scrolled up into old
-     *    messages we already hold; this round writes nothing rather than
-     *    duplicating history at the end of the file.
+     *  - a full sequence already exists in the log → do not append an old screen.
+     *  - a disjoint unknown screen → keep it; it may contain new messages.
      *  - anything else         → append all of S.
      *
      * @param screenBatch true for a capture (the rules above). False for a
@@ -181,30 +180,8 @@ class KbStore private constructor(context: Context) {
             // Same screen as last time: nothing happened worth recording.
             if (screenBatch && prev.isNotEmpty() && prev == keys) return true
 
-            // How much of S the log already ends with.
-            var k = 0
-            val maxK = minOf(list.size, keys.size)
-            for (cand in maxK downTo 1) {
-                var match = true
-                for (i in 0 until cand) {
-                    val e = list[list.size - cand + i]
-                    if (key(e.side, e.text) != keys[i]) { match = false; break }
-                }
-                if (match) { k = cand; break }
-            }
-
-            val tail: List<LogEntry> = when {
-                !screenBatch -> screen
-                list.isEmpty() -> screen
-                k > 0 -> screen.drop(k)
-                // Nothing in common with the screen we last wrote → we are looking
-                // at older messages, not newer ones. Leave the log alone.
-                prev.isNotEmpty() && keys.none { it in prev } -> {
-                    Log.d(TAG, "appendLog contact=$contactId skipped: scrolled off the last screen")
-                    return true
-                }
-                else -> screen
-            }
+            val k = if (screenBatch) HistoryMerge.skipCount(list.map { key(it.side, it.text) }, keys) else 0
+            val tail = screen.drop(k)
             if (tail.isEmpty()) {
                 if (screenBatch) saveLastScreen(contactId, keys)
                 return true

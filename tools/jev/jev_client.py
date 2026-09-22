@@ -9,8 +9,12 @@ import time
 import urllib.error
 import urllib.request
 
-API_URL = "https://openrouter.ai/api/alpha/decisions"
-MODEL = "typesafe/jev-1.13"
+PROVIDER = os.environ.get("JEV_PROVIDER", "openrouter").strip().lower()
+if PROVIDER not in {"openrouter", "typesafe"}:
+    raise ValueError("JEV_PROVIDER must be openrouter or typesafe")
+API_URL = ("https://api.typesafe.ai/v1/systemone" if PROVIDER == "typesafe"
+           else "https://openrouter.ai/api/alpha/decisions")
+MODEL = "jev-latest" if PROVIDER == "typesafe" else "typesafe/jev-1.13"
 MAX_RETRIES = 3
 
 
@@ -24,17 +28,19 @@ def redact_secrets(text: str) -> str:
     """Strip the live key from any string before print or disk write."""
     if not isinstance(text, str):
         text = str(text)
-    key = os.environ.get("OPENROUTER_API_KEY") or ""
-    if key:
-        text = text.replace(key, "[REDACTED]")
+    for name in ("OPENROUTER_API_KEY", "TYPESAFE_API_KEY"):
+        key = os.environ.get(name) or ""
+        if key:
+            text = text.replace(key, "[REDACTED]")
     return text
 
 
 def _api_key() -> str:
-    key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    name = "TYPESAFE_API_KEY" if PROVIDER == "typesafe" else "OPENROUTER_API_KEY"
+    key = (os.environ.get(name) or "").strip()
     if not key:
         raise JevError(
-            "OPENROUTER_API_KEY is not set. Export it in the environment; "
+            f"{name} is not set. Export it in the environment; "
             "do not put the key in a file."
         )
     return key
@@ -84,7 +90,7 @@ def ask(state: dict, questions: dict, timeout: float = 20) -> dict:
                 time.sleep(2**attempt)
                 continue
             readable = {
-                401: "Jev HTTP 401: API key rejected. Check OPENROUTER_API_KEY.",
+                401: "Jev HTTP 401: API key rejected. Check the selected provider's key.",
                 422: f"Jev HTTP 422: request body rejected. {last_body}",
                 429: f"Jev HTTP 429: rate limited after {MAX_RETRIES} retries. {last_body}",
                 529: f"Jev HTTP 529: provider overloaded after {MAX_RETRIES} retries. {last_body}",

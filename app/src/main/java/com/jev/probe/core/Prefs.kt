@@ -188,10 +188,18 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
     // ------------------------------------------------------------- helpers
 
     /** Reply route key, falling back to the judge key. */
-    fun effectiveReplyKey(): String = replyKey.ifBlank { judgeKey }
+    fun effectiveReplyKey(): String = replyKey.ifBlank {
+        if (ApiKeyRouting.canInherit(judgeBaseUrl, replyBaseUrl)) judgeKey else ""
+    }
 
     /** Vision route key, falling back to reply then judge. */
-    fun effectiveVisionKey(): String = visionKey.ifBlank { effectiveReplyKey() }
+    fun effectiveVisionKey(): String = visionKey.ifBlank {
+        when {
+            ApiKeyRouting.canInherit(replyBaseUrl, visionBaseUrl.ifBlank { DEFAULT_VISION_BASE }) -> effectiveReplyKey()
+            ApiKeyRouting.canInherit(judgeBaseUrl, visionBaseUrl.ifBlank { DEFAULT_VISION_BASE }) -> judgeKey
+            else -> ""
+        }
+    }
 
     /** Full POST URL for the Jev decisions call, per provider. */
     fun judgeEndpoint(): String {

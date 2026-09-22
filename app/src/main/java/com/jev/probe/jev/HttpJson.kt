@@ -54,6 +54,7 @@ object HttpJson {
         route: String,
         extraHeaders: Map<String, String> = emptyMap()
     ): JSONObject {
+        if (key.isBlank()) throw ApiException(route, null, "请填写此服务商的密钥；不同接口域名不能共用密钥")
         var attempt = 0
         var last: ApiException? = null
         while (attempt < MAX_ATTEMPTS) {
@@ -64,6 +65,7 @@ object HttpJson {
                     connectTimeout = 15000
                     readTimeout = 40000
                     doOutput = true
+                    instanceFollowRedirects = false
                     setRequestProperty("Authorization", "Bearer $key")
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }

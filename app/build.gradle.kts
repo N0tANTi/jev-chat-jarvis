@@ -24,6 +24,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "1.3"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
 
         // ML Kit's bundled Chinese recognizer ships native libs for every ABI.
         // The target phone (and every phone this can run on: minSdk 30) is
@@ -45,6 +46,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".trial"
+            versionNameSuffix = "-session-fix"
+            manifestPlaceholders["appLabel"] = "Jev 修复试用版"
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
@@ -71,6 +77,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
