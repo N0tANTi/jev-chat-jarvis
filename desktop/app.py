@@ -34,6 +34,10 @@ class App:
         self.suppress_edit = False
         self.closed = False
         self.watch = None
+        self.direct = None
+        self.direct_epoch = 0
+        self.direct_busy = False
+        self.direct_rows = None
         self.auto_revision = None
         self.capture_box = None
         self.store = ProfileStore()
@@ -74,6 +78,11 @@ class App:
         self.watch_btn = ttk.Button(toolbar, text="自动更新（云端）", command=self.toggle_watch)
         self.watch_btn.pack(side="left", padx=4)
         ttk.Button(toolbar, text="清空 / 取消", command=self.clear).pack(side="right")
+        native_bar = ttk.Frame(shell)
+        native_bar.pack(fill="x", pady=(6, 0))
+        ttk.Button(native_bar, text="直接读取微信（免 OCR）", command=self.choose_direct).pack(side="left")
+        ttk.Button(native_bar, text="停止读取", command=self.stop_direct).pack(side="left", padx=6)
+        ttk.Label(native_bar, text="独立单聊窗口 · 本地更新 · 发言人需核对", foreground=MUTED).pack(side="left")
 
         self.status = tk.StringVar(value="先截取单聊消息区域，排除标题、时间、联系人列表和输入框。也可以直接粘贴聊天文字。")
         ttk.Label(shell, textvariable=self.status, wraplength=1010, foreground=TEAL).pack(anchor="w", pady=12)
@@ -128,6 +137,84 @@ class App:
         ttk.Label(shell, text="不自动发送 · 不读取微信数据库 · 好友档案仅在你保存或开启学习后落盘", foreground=MUTED).pack(anchor="w", pady=(10, 0))
         root.after(100, self.poll)
         root.after(750, self.watch_tick)
+        root.after(1500, self.direct_tick)
+
+    def stop_direct(self):
+        self.direct = None
+        self.direct_rows = None
+        self.direct_epoch = getattr(self, "direct_epoch", 0) + 1
+        self.invalidate()
+
+    def direct_request(self, action, binding=None):
+        if self.direct_busy:
+            return
+        from desktop.direct_reader import request
+        epoch = self.direct_epoch
+        self.direct_busy = True
+
+        def run():
+            try:
+                value = request(action, binding)
+                kind = "direct_" + action
+            except ServiceError as exc:
+                value, kind = str(exc), "direct_error"
+            self.events.put((epoch, kind, value))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def choose_direct(self):
+        if self.direct_busy:
+            self.status.set("上次读取尚在收尾，请稍候再点击。")
+            return
+        self.clear()
+        self.status.set("正在查找独立单聊窗口；此步骤仅在本机读取，不上传。")
+        self.direct_request("list")
+
+    def direct_tick(self):
+        if self.closed:
+            return
+        if self.direct is not None and not self.direct_busy:
+            self.direct_request("read", self.direct)
+        self.root.after(1500, self.direct_tick)
+
+    def direct_result(self, epoch, kind, value):
+        self.direct_busy = False
+        if epoch != self.direct_epoch:
+            return
+        if kind == "direct_error":
+            self.stop_direct()
+            self.set_transcript("")
+            self.status.set(value)
+        elif kind == "direct_list":
+            if not value:
+                self.status.set("未找到独立单聊窗口。请在微信中双击一个好友会话打开独立窗口，再点击直接读取；群聊暂不支持。")
+                return
+            dialog = tk.Toplevel(self.root)
+            dialog.title("选择本次读取的微信单聊")
+            ttk.Label(dialog, text="请核对窗口与当前好友档案；不会按名字自动关联档案。", padding=12).pack()
+
+            def select(binding):
+                dialog.destroy()
+                if epoch != self.direct_epoch:
+                    return
+                self.direct = binding
+                self.preview.configure(image="", text="微信文字直读\n无需截图或 MinerU\n修改文字后停止更新", width=34, height=10)
+                self.direct_request("read", binding)
+
+            for binding in value:
+                ttk.Button(dialog, text=binding["name"] or "微信单聊", command=lambda b=binding: select(b)).pack(fill="x", padx=12, pady=4)
+        elif kind == "direct_read" and self.direct is not None:
+            if value["identity"] != self.direct["identity"]:
+                self.stop_direct()
+                self.set_transcript("")
+                self.status.set("聊天身份变化，已停止并清空。")
+                return
+            if value["rows"] != self.direct_rows:
+                from desktop.direct_reader import preview
+                self.invalidate()
+                self.direct_rows = value["rows"]
+                self.set_transcript(preview(value["rows"]))
+                self.status.set("已直接读取并在本地更新。请把每条「待确认：」改成「我：」或「对方：」，删除非文字消息后勾选核对；编辑时会停止更新。")
 
     def invalidate(self):
         self.generation.invalidate()
@@ -268,6 +355,7 @@ class App:
             self.status.set("截屏失败。请改用「导入截图」，或直接粘贴聊天文字。")
 
     def stop_watch(self):
+        self.stop_direct()
         self.auto_revision = None
         if getattr(self, "watch", None) is not None:
             self.watch = None
@@ -439,6 +527,9 @@ class App:
         try:
             while True:
                 revision, kind, value = self.events.get_nowait()
+                if kind.startswith("direct_"):
+                    self.direct_result(revision, kind, value)
+                    continue
                 if not self.generation.current(revision):
                     continue
                 automatic = getattr(self, "auto_revision", None) == revision

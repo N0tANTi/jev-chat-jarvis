@@ -60,6 +60,11 @@ desktop/.venv/Scripts/python.exe -m pip install -r desktop/accessibility-require
 
 ## 可选启动参数实验（未验证修复）
 
+更新：本机用户执行后已恢复 UIA 会话/正文控件，可保持此次微信运行试用
+[免 OCR 入口](../../desktop/README.md#直接读取试用免-ocr发言人仍需核对)。
+这是一次实测结果，不保证其他账号/启动/版本可复现；发言人仍未验证。
+以下保留实验及回退步骤。
+
 v2 已完成：两个顶层窗口及各自子窗口共 20 组测量，无错误/截断，仍仅通用窗口结构。
 下一假设来自 pywechat #264 的用户反馈：`--disable-gpu`，同时存在失败反馈。
 

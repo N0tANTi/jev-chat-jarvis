@@ -39,3 +39,8 @@
 - Keep confirmed user facts separate from evidence-backed model hypotheses. Contact
   identity is an explicit local UUID; never auto-merge contacts by display name.
 - Current wxauto diagnostics are in `docs/runbooks/wxauto-diagnostics.md`.
+- User authorized opt-in native UIA reading. Bind an explicitly selected independent
+  single-chat window by HWND, runtime ID and automation ID; never associate profiles
+  by display name. Native text stays in memory until reviewed generation. Unknown
+  speakers must remain unassigned; no native automatic cloud generation until sender
+  detection is verified. Keep COM queries in a bounded child process.
