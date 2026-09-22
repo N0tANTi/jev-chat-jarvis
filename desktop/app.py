@@ -15,6 +15,7 @@ from PIL import Image, ImageGrab, ImageTk
 from desktop.service import (Generation, KEY_NAMES, MAX_IMAGE_PIXELS, ServiceError,
                              analyze, load_keys, parse_transcript, recognize, to_transcript)
 from desktop.memory import ProfileStore, analyze_profile
+from desktop.watcher import WindowBinding, SettledFrames, signature
 
 BG = "#f4f5f2"
 INK = "#182d2a"
@@ -32,6 +33,9 @@ class App:
         self.replies = []
         self.suppress_edit = False
         self.closed = False
+        self.watch = None
+        self.auto_revision = None
+        self.capture_box = None
         self.store = ProfileStore()
         self.contact_id = None
         self.contact_choices = {}
@@ -55,7 +59,7 @@ class App:
         missing = [n for n in KEY_NAMES if not keys.get(n)]
         self.config_label = ttk.Label(shell, text="配置已就绪 · MinerU / DeepSeek Flash / Jev" if not missing else "缺少配置：" + " / ".join(missing), foreground=TEAL if not missing else "#a64429")
         self.config_label.pack(anchor="w")
-        ttk.Label(shell, text="点击识别：所选图片上传 MinerU。点击生成：核对后的文字发送 DeepSeek 和 TypeSafe。", foreground=MUTED).pack(anchor="w", pady=(5, 12))
+        ttk.Label(shell, text="识别会上传图片到 MinerU；生成会发送文字到 DeepSeek / TypeSafe。自动模式会在画面变化时重复处理。", foreground=MUTED).pack(anchor="w", pady=(5, 12))
 
         toolbar = ttk.Frame(shell)
         toolbar.pack(fill="x")
@@ -67,6 +71,8 @@ class App:
         self.ocr_btn.pack(side="left")
         self.analyze_btn = ttk.Button(toolbar, text="3  生成回复", style="Accent.TButton", command=self.generate)
         self.analyze_btn.pack(side="left", padx=6)
+        self.watch_btn = ttk.Button(toolbar, text="自动更新（云端）", command=self.toggle_watch)
+        self.watch_btn.pack(side="left", padx=4)
         ttk.Button(toolbar, text="清空 / 取消", command=self.clear).pack(side="right")
 
         self.status = tk.StringVar(value="先截取单聊消息区域，排除标题、时间、联系人列表和输入框。也可以直接粘贴聊天文字。")
@@ -79,7 +85,7 @@ class App:
         self.preview = tk.Label(left, text="截图只在内存中保留\n不会自动读取微信或上传", bg="#e6ebe5", fg=MUTED,
                                 font=("Microsoft YaHei UI", 10), width=34, height=10)
         self.preview.pack(fill="both", expand=True, pady=(8, 5))
-        ttk.Label(left, text="切换聊天或出现新消息后，请重新截图。\n本版面向微信单聊；群聊和深色气泡请手动核对。", foreground=MUTED).pack(anchor="w")
+        ttk.Label(left, text="自动模式需微信前台可见；切换好友后重新绑定。\n仅支持单聊；群聊和深色气泡请手动核对。", foreground=MUTED).pack(anchor="w")
         right = ttk.Frame(middle)
         right.pack(side="left", fill="both", expand=True)
         ttk.Label(right, text="核对识别内容", font=("Microsoft YaHei UI", 12, "bold")).pack(anchor="w")
@@ -121,6 +127,7 @@ class App:
             self.cards.append((label, button))
         ttk.Label(shell, text="不自动发送 · 不读取微信数据库 · 好友档案仅在你保存或开启学习后落盘", foreground=MUTED).pack(anchor="w", pady=(10, 0))
         root.after(100, self.poll)
+        root.after(750, self.watch_tick)
 
     def invalidate(self):
         self.generation.invalidate()
@@ -134,6 +141,7 @@ class App:
     def on_edit(self, _=None):
         if self.transcript.edit_modified():
             if not self.suppress_edit:
+                self.stop_watch()
                 self.invalidate()
                 self.reviewed.set(False)
             self.transcript.edit_modified(False)
@@ -147,15 +155,20 @@ class App:
         self.reviewed.set(False)
 
     def set_picture(self, picture):
+        self.stop_watch()
+        self.capture_box = None
         self.invalidate()
         self.picture = picture.convert("RGB")
         self.set_transcript("")
+        self.show_picture()
+        self.status.set("截图已就绪，尚未上传。确认左侧只有本次聊天消息后，点击「识别聊天」。")
+        self.update_buttons()
+
+    def show_picture(self):
         thumb = self.picture.copy()
         thumb.thumbnail((380, 245))
         self.preview_image = ImageTk.PhotoImage(thumb)
         self.preview.configure(image=self.preview_image, text="", width=380, height=245)
-        self.status.set("截图已就绪，尚未上传。确认左侧只有本次聊天消息后，点击「识别聊天」。")
-        self.update_buttons()
 
     def open_image(self):
         filename = filedialog.askopenfilename(title="选择聊天截图", filetypes=[("聊天截图", "*.png *.jpg *.jpeg *.webp *.bmp")])
@@ -169,13 +182,16 @@ class App:
         except Exception:
             self.status.set("无法读取图片或尺寸过大，请选择不超过 1600 万像素的图片。")
 
-    def capture(self):
+    def capture(self, target="messages"):
         # The user starts capture. No screen access on launch or in background workers.
         self.invalidate()
+        self.stop_watch()
+        if target == "messages":
+            self.capture_box = None
         self.root.withdraw()
-        self.root.after(300, self.select_region)
+        self.root.after(300, lambda: self.select_region(target))
 
-    def select_region(self):
+    def select_region(self, target="messages"):
         try:
             screen = ImageGrab.grab(all_screens=True)
             x = ctypes.windll.user32.GetSystemMetrics(76)
@@ -201,14 +217,27 @@ class App:
             canvas.create_image(0, 0, image=photo, anchor="nw")
             canvas.photo = photo
             canvas.create_rectangle(12, 12, 680, 60, fill=INK, outline=INK)
-            canvas.create_text(28, 36, text="拖动框选消息气泡（不含标题 / 输入框） · Esc 取消 · 此时不会上传", fill="white", anchor="w", font=("Microsoft YaHei UI", 11))
+            hint = "框选聊天内的联系人标题文字（仅标题，不含消息）· Esc 取消" if target == "title" else "拖动框选消息气泡（不含标题 / 输入框） · Esc 取消 · 此时不会上传"
+            canvas.create_text(28, 36, text=hint, fill="white", anchor="w", font=("Microsoft YaHei UI", 11))
             state = {}
 
-            def finish(picture=None):
+            def finish(picture=None, box=None):
                 overlay.destroy()
-                self.root.deiconify()
-                if picture is not None:
-                    self.set_picture(picture)
+                try:
+                    if picture is not None and target == "title":
+                        binding = WindowBinding(self.capture_box, box)
+                        self.watch = {"binding": binding, "title": picture.convert("RGB"),
+                                      "frames": SettledFrames(), "last_seen": None}
+                        self.set_transcript("")
+                        self.watch_btn.configure(text="停止自动更新")
+                        self.status.set("已锁定当前标题。回到微信后自动处理新画面；标题或窗口位置改变会停止。")
+                    elif picture is not None:
+                        self.set_picture(picture)
+                        self.capture_box = box
+                except ServiceError as exc:
+                    self.status.set(str(exc))
+                finally:
+                    self.root.deiconify()
 
             def start(event):
                 state["start"] = (event.x, event.y)
@@ -226,8 +255,8 @@ class App:
                 a, b = state["start"]
                 box = (max(0, min(a, event.x)), max(0, min(b, event.y)),
                        min(screen.width, max(a, event.x)), min(screen.height, max(b, event.y)))
-                if box[2] - box[0] >= 60 and box[3] - box[1] >= 40:
-                    finish(screen.crop(box))
+                if box[2] - box[0] >= 30 and box[3] - box[1] >= (12 if target == "title" else 40):
+                    finish(screen.crop(box), (box[0] + x, box[1] + y, box[2] + x, box[3] + y))
 
             canvas.bind("<ButtonPress-1>", start)
             canvas.bind("<B1-Motion>", move)
@@ -237,6 +266,78 @@ class App:
         except Exception:
             self.root.deiconify()
             self.status.set("截屏失败。请改用「导入截图」，或直接粘贴聊天文字。")
+
+    def stop_watch(self):
+        self.auto_revision = None
+        if getattr(self, "watch", None) is not None:
+            self.watch = None
+            self.generation.invalidate()
+            self.watch_btn.configure(text="自动更新（云端）")
+
+    def toggle_watch(self):
+        if self.watch:
+            self.stop_watch()
+            self.invalidate()
+            self.status.set("自动更新已停止；已提交的请求无法撤回，其迟到结果会被忽略。")
+            return
+        if not self.capture_box:
+            self.status.set("请先用「截取聊天」框选微信消息区。导入图片不能用于连续采集。")
+            return
+        self.capture("title")
+
+    def watch_tick(self):
+        if self.closed:
+            return
+        watch = self.watch
+        if watch:
+            try:
+                picture = watch["binding"].capture(watch["title"])
+                if picture is not None:
+                    frame, now = signature(picture), time.monotonic()
+                    if frame != watch["last_seen"]:
+                        watch["last_seen"] = frame
+                        self.invalidate()
+                        self.status.set("聊天画面变化，等待稳定后自动识别…")
+                    ready = watch["frames"].observe(frame, now)
+                    if ready and not (self.worker and self.worker.is_alive()):
+                        watch["frames"].submitted(frame, now)
+                        self.picture = picture
+                        self.show_picture()
+                        self.start_job("auto_ocr", lambda cancel, progress, img=picture: to_transcript(
+                            recognize(img, self.keys["MINERU_API_TOKEN"], cancel, progress), img))
+                else:
+                    # Foreground changes can conceal chat switches. Discard pending work.
+                    if self.auto_revision is not None:
+                        self.invalidate()
+                        self.auto_revision = None
+                        watch["frames"].processed = None
+            except ServiceError as exc:
+                self.stop_watch()
+                self.invalidate()
+                self.status.set(str(exc))
+            except Exception:
+                self.stop_watch()
+                self.invalidate()
+                self.status.set("自动采集失败，已停止；请重新框选微信消息区。")
+        self.root.after(750, self.watch_tick)
+
+    def auto_current(self):
+        """Check again at result delivery and before the next cloud stage."""
+        if not self.watch:
+            return False
+        try:
+            picture = self.watch["binding"].capture(self.watch["title"])
+            if picture is not None and signature(picture) == self.watch["last_seen"]:
+                return True
+            self.watch["frames"].processed = None
+            self.invalidate()
+            self.auto_revision = None
+            self.status.set("来源画面变化或微信不在前台，旧结果已丢弃；回到微信后重新识别。")
+        except Exception:
+            self.stop_watch()
+            self.invalidate()
+            self.status.set("无法确认原聊天画面，自动更新已停止，请重新绑定。")
+        return False
 
     def update_buttons(self):
         busy = self.worker is not None and self.worker.is_alive()
@@ -253,6 +354,7 @@ class App:
         else:
             self.invalidate()
         revision, cancel = self.generation.revision, self.generation.cancel
+        self.auto_revision = revision if kind in ("auto_ocr", "auto_analysis") else None
 
         def progress(text):
             self.events.put((revision, "progress", text))
@@ -271,6 +373,7 @@ class App:
         self.update_buttons()
 
     def ocr(self):
+        self.stop_watch()
         if self.picture is None:
             return
         picture = self.picture.copy()
@@ -279,6 +382,7 @@ class App:
             recognize(picture, self.keys["MINERU_API_TOKEN"], cancel, progress), picture))
 
     def generate(self):
+        self.stop_watch()
         try:
             messages = parse_transcript(self.transcript.get("1.0", "end"))
             if not self.reviewed.get():
@@ -337,12 +441,30 @@ class App:
                 revision, kind, value = self.events.get_nowait()
                 if not self.generation.current(revision):
                     continue
+                automatic = getattr(self, "auto_revision", None) == revision
+                if automatic and kind != "progress" and not self.auto_current():
+                    continue
                 if kind in ("progress", "error"):
+                    if kind == "error" and automatic:
+                        self.stop_watch()
                     self.status.set(value)
-                elif kind == "ocr":
+                elif kind in ("ocr", "auto_ocr"):
                     self.set_transcript(value)
                     self.status.set("识别完成。请核对发言人，删除标题 / 时间 / 系统提示，然后生成回复。")
-                elif kind == "analysis":
+                    if kind == "auto_ocr" and self.watch:
+                        try:
+                            messages = parse_transcript(value)
+                            if messages[-1]["from"] == "other":
+                                rev = self.generation.revision
+                                self.root.after(150, lambda r=rev: self.generate_automatic(r))
+                            else:
+                                self.auto_revision = None
+                                self.status.set("识别到最后一句来自我，继续等待对方消息。")
+                        except ServiceError:
+                            self.stop_watch()
+                            self.status.set("识别存在待确认的发言人，已暂停自动模式；请核对文字。")
+                elif kind in ("analysis", "auto_analysis"):
+                    self.auto_revision = None
                     self.replies = value["candidates"]
                     best = value["best_index"]
                     for i, (label, button) in enumerate(self.cards):
@@ -352,6 +474,8 @@ class App:
                     names = {"confirm_you_care": "希望被重视", "vent_anger": "表达不满", "request_action": "希望采取行动", "seek_explanation": "想了解原因", "casual_chat": "日常聊天", "close_topic": "准备结束话题"}
                     self.insight.set("Jev 推测：" + names.get(intent, "请结合语境判断") + "。推荐仅供参考，不代表对方的真实心理。")
                     self.status.set(f"{time.strftime('%H:%M:%S')} 已生成 · 基于本次快照。聊天有变化时请重新识别；复制后由你粘贴发送。")
+                    if kind == "auto_analysis":
+                        self.status.set(f"{time.strftime('%H:%M:%S')} 自动建议已更新 · OCR 未经人工核对，请核对后使用；未写入好友记忆。")
                     followup = value.get("learn_contact")
                     if followup:
                         rev = self.generation.revision
@@ -374,7 +498,23 @@ class App:
             self.root.clipboard_append(self.replies[index])
             self.status.set("已复制。请确认微信当前联系人，再自行粘贴和发送。")
 
+    def generate_automatic(self, revision):
+        if not self.watch or not self.generation.current(revision) or not self.auto_current():
+            return
+        # Automatic OCR is not human-reviewed: never append it to long-term memory.
+        try:
+            messages = parse_transcript(self.transcript.get("1.0", "end"))
+            memory = self.store.context(self.contact_id)
+            relationship = self.relationship.get().strip()[:500] or "unspecified"
+            self.start_job("auto_analysis", lambda cancel, progress: analyze(
+                messages, relationship, self.keys, cancel, progress, memory=memory))
+        except ServiceError as exc:
+            self.stop_watch()
+            self.status.set(str(exc))
+
     def clear(self):
+        self.stop_watch()
+        self.capture_box = None
         self.invalidate()
         self.picture = None
         self.preview_image = None
@@ -384,6 +524,7 @@ class App:
         self.update_buttons()
 
     def close(self):
+        self.stop_watch()
         self.closed = True
         self.generation.invalidate()
         self.picture = None
