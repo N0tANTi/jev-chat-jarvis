@@ -15,6 +15,7 @@ val releaseProps = Properties().apply {
 }
 
 android {
+    buildFeatures { buildConfig = true }
     namespace = "com.jev.probe"
     compileSdk = 35
 

@@ -85,7 +85,7 @@ object HttpJson {
                 // either way this used to surface as a transport failure with no
                 // status, which then got retried even for a 401.
                 if (code !in 200..299) {
-                    val errText = readBody(conn.errorStream)
+                    val errText = readBody(conn.errorStream).replace(key, "[REDACTED]")
                     throw ApiException(route, code, errText.ifBlank { "（响应体为空）" })
                 }
                 val text = readBody(conn.inputStream)
