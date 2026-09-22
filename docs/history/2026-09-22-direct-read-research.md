@@ -54,5 +54,7 @@ v2 独立实现 [EnumChildWindows](https://learn.microsoft.com/en-us/windows/win
 57 项测试通过，新增 UIA 树遍历、环/兄弟循环、预算、失败脱敏、部分超时保留和五路目标调度。
 本机 MSAA/UIA COM 绑定均可加载，未由代理对真实微信运行 v2。用户需用原启动文件再运行一次。
 当前结论仍为“原生消息未接通”，不是新版适配成功。
+v2 代码 `dda76f4` 已同步至 fork；[Windows CI](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705963373)
+通过 57 项测试和双接口初始化检查，实机结果仍待用户运行。
 
 操作、限制和回退见 [诊断手册](../runbooks/wxauto-diagnostics.md)，任务见 [路线图](../../ROADMAP.md)。

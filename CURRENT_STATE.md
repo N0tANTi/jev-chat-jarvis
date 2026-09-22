@@ -14,6 +14,8 @@ Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `co
 - 新增 v2 探针：同进程原生子窗口、UIA Raw/Control/Content 三视图及 MSAA 对照。
   45 秒总超时保留已完成样本和未完成目标；57 项测试及本机双 API 绑定加载通过。
   v2 实机结果待用户运行，当前 Computer Use 工具未提供对应专用入口。
+- v2 代码 `dda76f4` 已推送；[Windows CI #35705963373](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705963373)
+  的 57 项测试和双接口绑定加载检查通过。
 - 代码 `048dab9` 已推送；[Windows CI #35705089024](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705089024)
   通过，包含 51 项测试及独立 COM 绑定加载检查，不包含真实微信 MSAA 查询。
 - 另一些新版项目依靠进程写入开启控件树、数据库解密读取消息；不作为当前项目的实现路线。
