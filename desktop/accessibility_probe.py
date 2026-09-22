@@ -1,4 +1,4 @@
-"""User-run MSAA structural diagnostic. Never reads names, values or chat text.
+"""User-run MSAA/UIA structural diagnostic. Never reads names, values or chat text.
 
 Independent implementation of documented Microsoft APIs. No wxauto import,
 process-memory access, screenshots, input simulation, or network requests.
@@ -12,6 +12,94 @@ import sys
 from collections import Counter
 from ctypes import wintypes
 from pathlib import Path
+
+
+def summarize_uia(root, walker, limit=256, max_depth=12):
+    pending = [(root, 0)]
+    visited, retained = set(), []
+    types = Counter()
+    count = errors = 0
+    truncated = False
+    while pending and count < limit:
+        element, depth = pending.pop()
+        try:
+            identity = tuple(element.GetRuntimeId())
+            if not identity:
+                raise ValueError("missing runtime id")
+        except Exception:
+            # Retain wrappers so fallback pointer identities cannot be reused.
+            identity = ("pointer", ctypes.cast(element, ctypes.c_void_p).value)
+        if identity in visited:
+            continue
+        visited.add(identity)
+        retained.append(element)
+        count += 1
+        try:
+            control_type = element.CurrentControlType
+            types[str(control_type) if type(control_type) is int else "custom"] += 1
+            child = walker.GetFirstChildElement(element)
+            if depth >= max_depth:
+                truncated |= bool(child)
+                continue
+            siblings = set()
+            while child:
+                if count + len(pending) >= limit:
+                    truncated = True
+                    break
+                child_id = tuple(child.GetRuntimeId())
+                if not child_id or child_id in siblings:
+                    errors += 1
+                    break
+                siblings.add(child_id)
+                pending.append((child, depth + 1))
+                child = walker.GetNextSiblingElement(child)
+        except Exception:
+            errors += 1
+    return {"nodes": count, "control_types": dict(types), "errors": errors,
+            "truncated": bool(truncated or pending)}
+
+
+class Uia:
+    def __init__(self):
+        import comtypes.client
+        module = comtypes.client.GetModule("UIAutomationCore.dll")
+        self.api = comtypes.client.CreateObject(module.CUIAutomation, interface=module.IUIAutomation)
+
+    def measure(self, hwnd, view):
+        root = self.api.ElementFromHandle(hwnd)
+        if not root:
+            raise OSError("UIA root unavailable")
+        walker = getattr(self.api, {"raw": "RawViewWalker", "control": "ControlViewWalker",
+                                    "content": "ContentViewWalker"}[view])
+        return summarize_uia(root, walker)
+
+
+def child_windows(parent, limit=16):
+    """Native descendants in the same process, including hidden child windows."""
+    u = ctypes.WinDLL("user32")
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    u.EnumChildWindows.argtypes = [wintypes.HWND, callback_type, wintypes.LPARAM]
+    u.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    u.IsWindowVisible.argtypes = [wintypes.HWND]
+    parent_pid = wintypes.DWORD()
+    u.GetWindowThreadProcessId(parent, ctypes.byref(parent_pid))
+    result = []
+    truncated = False
+
+    def visit(hwnd, _):
+        nonlocal truncated
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value != parent_pid.value:
+            return True
+        if len(result) >= limit:
+            truncated = True
+            return False
+        result.append((hwnd, bool(u.IsWindowVisible(hwnd))))
+        return True
+
+    u.EnumChildWindows(parent, callback_type(visit), 0)
+    return result, truncated
 
 
 def summarize(root, backend, limit=256, max_depth=8):
@@ -127,30 +215,83 @@ def weixin_windows():
     return result
 
 
-def probe():
+def probe(emit=lambda _: None):
     backend = Msaa()
+    try:
+        uia = Uia()
+    except Exception:
+        uia = None
     windows = weixin_windows()
     samples = []
+    emit({"event": "inventory", "visible_windows": len(windows), "schema_version": 2})
+    # Probe every top-level window before spending the remaining budget on children.
+    targets, descendants = [], []
     for index, hwnd in enumerate(windows[:8]):
+        children, truncated = child_windows(hwnd)
+        targets.append((hwnd, {"window_index": index, "target": "top",
+                               "child_windows": len(children), "children_truncated": truncated}))
+        descendants.extend((child, {"window_index": index, "target": "child",
+                                    "child_index": n, "visible": visible})
+                           for n, (child, visible) in enumerate(children))
+    selected = (targets + descendants)[:24]
+    emit({"event": "targets", "selected_targets": len(selected),
+          "target_limit_reached": len(targets) + len(descendants) > 24})
+    for hwnd, metadata in selected:
+        for view in ("raw", "control", "content"):
+            emit({"event": "attempt", "target": {**metadata, "api": "uia", "view": view}})
+            try:
+                if uia is None:
+                    raise OSError("UIA initialization failed")
+                sample = uia.measure(hwnd, view)
+            except Exception:
+                sample = {"unavailable": True}
+            item = {**metadata, "api": "uia", "view": view, **sample}
+            samples.append(item)
+            emit({"event": "sample", "sample": item})
         for label, object_id in (("client", 0xFFFFFFFC), ("window", 0)):
+            emit({"event": "attempt", "target": {**metadata, "api": "msaa", "object": label}})
             try:
                 sample = summarize(backend.root(hwnd, object_id), backend)
             except Exception:
                 sample = {"unavailable": True}
-            samples.append({"window_index": index, "object": label, **sample})
-    return {"status": "measured", "visible_windows": len(windows), "samples": samples,
+            item = {**metadata, "api": "msaa", "object": label, **sample}
+            samples.append(item)
+            emit({"event": "sample", "sample": item})
+    return {"schema_version": 2, "status": "measured", "visible_windows": len(windows),
+            "samples": samples, "target_limit_reached": len(targets) + len(descendants) > 24,
+            "uia_initialized": uia is not None,
             "window_limit_reached": len(windows) > 8, "message_reading_verified": False}
+
+
+def partial_report(output):
+    result = {"schema_version": 2, "status": "partial_timeout", "samples": [],
+              "message_reading_verified": False}
+    for line in (output or b"").splitlines():
+        try:
+            event = json.loads(line)
+            if event.get("event") == "sample":
+                result["samples"].append(event["sample"])
+                result.pop("pending_target", None)
+            elif event.get("event") == "attempt":
+                result["pending_target"] = event["target"]
+            elif event.get("event") in ("inventory", "targets"):
+                result.update({k: v for k, v in event.items() if k != "event"})
+        except (ValueError, TypeError, AttributeError, KeyError):
+            continue
+    return result
 
 
 def run_bounded():
     try:
         result = subprocess.run([sys.executable, "-m", "desktop.accessibility_probe", "--worker"],
                                 cwd=Path(__file__).resolve().parent.parent, capture_output=True,
-                                timeout=25, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                timeout=45, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode:
             return {"status": "probe_failed"}
-        return json.loads(result.stdout)
-    except subprocess.TimeoutExpired:
+        return json.loads(result.stdout.splitlines()[-1])
+    except subprocess.TimeoutExpired as exc:
+        if exc.stdout:
+            return partial_report(exc.stdout)
         return {"status": "timeout", "message_reading_verified": False}
     except Exception:
         return {"status": "probe_failed"}
@@ -159,7 +300,7 @@ def run_bounded():
 def main():
     if "--worker" in sys.argv:
         try:
-            result = probe()
+            result = probe(lambda event: print(json.dumps(event), flush=True))
         except ImportError:
             result = {"status": "missing_dependency"}
         except Exception:
@@ -169,7 +310,7 @@ def main():
         destination = Path(__file__).resolve().parent.parent / "_reports" / "wechat-msaa-summary.json"
         destination.parent.mkdir(exist_ok=True)
         destination.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=None if "--worker" in sys.argv else 2))
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@
   README 区分了进程写入激活 Qt 控件树、数据库解密读取消息。即便树可见也不能据此证明
   普通 UIA 可直接读取完整正文。本项目既有约定不修改微信进程、不读数据库，因此未执行。
 
-## 本次交付与未完成项
+## 首轮交付
 
 依据 Microsoft 的 [AccessibleObjectFromWindow](https://learn.microsoft.com/en-us/windows/win32/api/oleacc/nf-oleacc-accessibleobjectfromwindow)
 和 [AccessibleChildren](https://learn.microsoft.com/en-us/windows/win32/api/oleacc/nf-oleacc-accessiblechildren)
@@ -34,9 +34,25 @@
 
 当前 Computer Use 只暴露统一窗口状态查询，不暴露单独 MSAA；技能要求桌面操作仅用其 JS API。
 故没有通过 shell 运行自写探针替代工具。将探针作为用户可运行的产品诊断入口交付，
-实机结果待用户启动后读取无正文摘要。不得把接口加载/单元测试描述成新版微信适配成功。
+首轮实机结果由用户启动后读取无正文摘要。不得把接口加载/单元测试描述成新版微信适配成功。
 
 若 MSAA 有有效结构，下一阶段才做好友身份与消息读取验证；若无，保留 OCR。
-独立聊天窗口差异、MSAA、UIA RawView 的可行性均未验证，不凭假设开发自动发送。
+消息读取可行性仍未验证，不凭假设开发自动发送。
+
+## 用户实测与 v2 改进
+
+用户先测主窗口，再打开独立聊天窗口重测。摘要分别发现 1 / 2 个可见窗口；
+每个窗口 MSAA 客户区都是 24 节点、窗口对象 46 节点，角色分布相同，无错误和截断。
+仅出现通用窗口/按钮/滚动条等角色，没有列表项、静态文本或文本角色。
+这符合通用窗口外框的表现，但尚不能据此证明所有内部入口不可用。报告不含聊天正文且未入 Git。
+
+v2 独立实现 [EnumChildWindows](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumchildwindows)
+子窗口枚举，以及 [UIA 三视图](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-treeoverview)
+的 TreeWalker 遍历。只读取数值控件类型和运行时 ID（ID 仅内存去重，不入报告），不请求名称/值。
+子窗口限定同进程，节点、层数、窗口目标均有上限；45 秒超时保留已完成样本和挂起目标。
+
+57 项测试通过，新增 UIA 树遍历、环/兄弟循环、预算、失败脱敏、部分超时保留和五路目标调度。
+本机 MSAA/UIA COM 绑定均可加载，未由代理对真实微信运行 v2。用户需用原启动文件再运行一次。
+当前结论仍为“原生消息未接通”，不是新版适配成功。
 
 操作、限制和回退见 [诊断手册](../runbooks/wxauto-diagnostics.md)，任务见 [路线图](../../ROADMAP.md)。
