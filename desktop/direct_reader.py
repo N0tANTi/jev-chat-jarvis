@@ -66,7 +66,7 @@ def collect(root, walker):
              if e.CurrentAutomationId == "chat_message_list" and e.CurrentControlType == 50008]
     if len(lists) != 1:
         raise ValueError("message list unavailable")
-    rows = []
+    rows, items = [], []
     for element in walk(lists[0], walker):
         if element.CurrentControlType == 50007:
             aid = element.CurrentAutomationId
@@ -80,11 +80,17 @@ def collect(root, walker):
             if not isinstance(text, str) or not text.strip() or len(text) > 20000:
                 raise ValueError("unsupported row")
             rows.append(text)
+            try:
+                rect = element.CurrentBoundingRectangle
+                bounds = [int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)]
+            except (AttributeError, TypeError):
+                bounds = None
+            items.append({"id": list(element.GetRuntimeId()), "text": text, "box": bounds})
     if not rows or sum(map(len, rows[-30:])) > 19000:
         raise ValueError("empty or large snapshot")
     if root.CurrentAutomationId != identity:
         raise ValueError("chat changed")
-    result = {"identity": identity, "rows": rows[-30:]}
+    result = {"identity": identity, "rows": rows[-30:], "items": items[-30:]}
     # Optional layout for the explicit calibrated OCR mode, never capture here.
     try:
         def box(element):

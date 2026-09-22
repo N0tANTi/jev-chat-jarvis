@@ -85,7 +85,7 @@ class App:
         ttk.Button(native_bar, text="停止读取", command=self.stop_direct).pack(side="left", padx=6)
         from desktop.calibration import open_review
         ttk.Button(native_bar, text="校对一次 → 自动运行", command=lambda: open_review(self)).pack(side="left", padx=6)
-        ttk.Label(native_bar, text="首次点选发言人，之后自动识别新消息", foreground=MUTED).pack(side="left")
+        ttk.Label(native_bar, text="确认后按新增消息更新，不重复识别旧消息", foreground=MUTED).pack(side="left")
 
         self.status = tk.StringVar(value="先截取单聊消息区域，排除标题、时间、联系人列表和输入框。也可以直接粘贴聊天文字。")
         ttk.Label(shell, textvariable=self.status, wraplength=1010, foreground=TEAL).pack(anchor="w", pady=12)
@@ -221,7 +221,7 @@ class App:
                 self.set_transcript(preview(value["rows"]))
                 self.status.set("已读取。点击「校对一次 → 自动运行」，点选我 / 对方 / 忽略，无需手改前缀。")
 
-    def start_calibrated(self, native, snapshot, reference, ignored):
+    def start_calibrated(self, native, snapshot, reference, ignored, choices=None):
         self.stop_watch()
         epoch = self.direct_epoch
         self.root.withdraw()
@@ -238,12 +238,16 @@ class App:
                 title = binding.grab(binding.title_box)
                 if not binding.ready():
                     raise ServiceError("窗口在绑定时变化，请重新读取。")
-                self.watch = {"binding": binding, "title": title, "frames": SettledFrames(),
-                              "last_seen": None, "native": native, "reference": reference,
-                              "ignored": ignored, "calibrated": False}
+                from desktop.incremental import IncrementalWorker
+                engine = IncrementalWorker(native, snapshot, choices or [], binding, title,
+                    self.keys, self.relationship.get().strip()[:500] or "unspecified",
+                    self.store.context(self.contact_id),
+                    lambda kind, value: self.events.put((epoch, "incremental_" + kind, value)))
+                self.watch = {"binding": binding, "incremental": engine}
+                engine.start()
                 self.capture_box = tuple(snapshot["message_box"])
                 self.watch_btn.configure(text="停止自动更新")
-                self.status.set("回到该微信单聊并保持前台。首次识别通过校对对照后，会自动更新回复建议。")
+                self.status.set("增量模式已开启。保持微信前台：只为方向未知的新消息调用局部 OCR，已有消息不重复识别。")
             except (ServiceError, OSError, KeyError) as exc:
                 self.stop_watch()
                 self.status.set(str(exc) if isinstance(exc, ServiceError) else "自动绑定失败，请重新读取。")
@@ -252,6 +256,25 @@ class App:
                     self.root.deiconify()
 
         self.root.after(350, bind)
+
+    def incremental_result(self, epoch, kind, value):
+        watch = getattr(self, "watch", None)
+        if epoch != self.direct_epoch or not watch or not watch.get("incremental") or watch["incremental"].cancel.is_set():
+            return
+        if kind == "incremental_error":
+            self.stop_watch()
+            self.status.set(value)
+        elif kind == "incremental_changed":
+            self.invalidate(keep_incremental=True)
+            self.status.set(value)
+        elif kind == "incremental_text":
+            self.set_transcript(value)
+        elif kind == "incremental_result":
+            # Reuse rendering only; automatic text is never marked reviewed or saved.
+            self.events.put((self.generation.revision, "analysis", value))
+            self.status.set("增量建议已更新；复制后自行发送，未写入好友记忆。")
+        else:
+            self.status.set(value)
 
     def recognize_watched(self, watch, picture, cancel, progress):
         from desktop.direct_reader import request
@@ -266,7 +289,12 @@ class App:
                 return None  # Retry the newest frame without another human review.
         return text
 
-    def invalidate(self):
+    def invalidate(self, *, keep_incremental=False):
+        watch = getattr(self, "watch", None)
+        if not keep_incremental and watch and watch.get("incremental"):
+            watch["incremental"].cancel.set()
+            self.watch = None
+            self.watch_btn.configure(text="自动更新（云端）")
         self.generation.invalidate()
         self.replies = []
         if hasattr(self, "cards"):
@@ -427,6 +455,9 @@ class App:
         if self.closed:
             return
         watch = self.watch
+        if watch and watch.get("incremental"):
+            self.root.after(750, self.watch_tick)
+            return
         if watch:
             try:
                 picture = watch["binding"].capture(watch["title"])
@@ -484,6 +515,8 @@ class App:
         self.ocr_btn.configure(state="normal" if self.picture is not None and not busy else "disabled")
 
     def start_job(self, kind, operation, *, preserve_replies=False):
+        if getattr(self, "watch", None) and self.watch.get("incremental"):
+            self.stop_watch()
         if self.worker is not None and self.worker.is_alive():
             self.status.set("上个请求还在收尾，请稍候。")
             return
@@ -577,6 +610,9 @@ class App:
         try:
             while True:
                 revision, kind, value = self.events.get_nowait()
+                if kind.startswith("incremental_"):
+                    self.incremental_result(revision, kind, value)
+                    continue
                 if kind.startswith("direct_"):
                     self.direct_result(revision, kind, value)
                     continue

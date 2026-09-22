@@ -54,3 +54,8 @@
   This explicit action may foreground the selected Weixin window and upload its
   guarded message crop to MinerU. Preserve native text and manual choices; leave
   ambiguous/duplicate matches unassigned. Never capture/upload on application startup.
+- Incremental mode supersedes the repeated first-frame OCR check for reviewed native
+  snapshots: cache explicit speaker choices against session RuntimeId + exact text.
+  Only append-confirmed unknown rows may trigger cropped OCR. Missing identity,
+  ambiguous history, reused IDs with changed text or unsafe crop bounds must pause;
+  never silently fall back to full-screen upload. RuntimeIds are not durable message IDs.

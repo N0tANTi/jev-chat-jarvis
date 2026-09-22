@@ -67,7 +67,7 @@ def open_review(app):
         for label in ("我", "对方", "忽略"):
             ttk.Radiobutton(line, text=label, value=label, variable=choice).pack(side="left", padx=5)
         ttk.Label(line, textvariable=choice, width=6).pack(side="left", padx=3)
-    notes = tk.StringVar(value="自动运行会将消息截图发送 MinerU，将文字发送 DeepSeek / TypeSafe。\n保持微信前台可见；生成建议后由你复制发送。自动内容不写入好友记忆。")
+    notes = tk.StringVar(value="确认后仅为方向未知的新消息上传局部截图；文字发送 DeepSeek / TypeSafe。\n保持微信前台可见；生成建议后由你复制发送。自动内容不写入好友记忆。")
     ttk.Label(dialog, textvariable=notes, wraplength=710, padding=12).pack(anchor="w")
     from desktop.speaker_prefill import attach_prefill
     attach_prefill(app, dialog, binding, snapshot, choices, notes, epoch)
@@ -79,8 +79,6 @@ def open_review(app):
         try:
             selected = [v.get() for v in choices]
             text, messages = reviewed_rows(rows, selected)
-            if automatic and {m["from"] for m in messages} != {"me", "other"}:
-                raise ServiceError("校准至少需要双方各一条文字消息；也可先选择仅保存校对。")
             if automatic and not all(snapshot.get(k) for k in ("message_box", "title_box")):
                 raise ServiceError("当前窗口未提供截图区域，暂不能自动校准；可保存校对后手动生成。")
             app.set_transcript(text)
@@ -88,7 +86,7 @@ def open_review(app):
             dialog.destroy()
             if automatic:
                 app.start_calibrated(binding, snapshot, messages,
-                                     [r for r, c in zip(rows, selected) if c == "忽略"])
+                                     [r for r, c in zip(rows, selected) if c == "忽略"], choices=selected)
             else:
                 app.status.set("校对已保存，可直接生成回复。")
         except ServiceError as exc:
@@ -97,4 +95,4 @@ def open_review(app):
     buttons = ttk.Frame(dialog, padding=12)
     buttons.pack(fill="x")
     ttk.Button(buttons, text="仅保存校对", command=lambda: finish(False)).pack(side="left")
-    ttk.Button(buttons, text="校对完成，自动运行（云端）", command=lambda: finish(True)).pack(side="right")
+    ttk.Button(buttons, text="确认完成，增量自动运行", command=lambda: finish(True)).pack(side="right")
