@@ -13,3 +13,17 @@
   history: `docs/history/2026-09-22-session-safety.md`.
 - Validate with `bash gradlew testDebugUnitTest assembleDebug lintDebug` on JDK 17
   with Android SDK 35, or the Android trial workflow. Device validation is separate.
+
+## Desktop trial
+
+- Desktop code lives in `desktop/`, on `codex/desktop-mineru-trial`, in this same fork.
+  The user requested desktop implementation and GitHub synchronization applies here.
+- The user explicitly authorized loading existing local `.env` credentials, including
+  MinerU, DeepSeek and TypeSafe. This supersedes upstream's no-key-file restriction
+  for ignored local configuration only. Do not commit those files or their contents.
+- Startup must not capture or call APIs. Only the user-selected crop goes to MinerU;
+  only reviewed text goes to DeepSeek / TypeSafe. No real chat content in test fixtures.
+- No background monitoring, automatic filling, sending or database access in this trial.
+- Desktop validation: `python -m unittest discover -s desktop/tests -v`.
+  Live smoke: `python -m desktop.smoke --env-file <local path>` uses synthetic data only.
+- Desktop runbook: `desktop/README.md`; history: `docs/history/2026-09-22-desktop-trial.md`.

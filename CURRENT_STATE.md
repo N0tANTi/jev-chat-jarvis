@@ -1,7 +1,23 @@
 # 当前状态
 
 日期：2026-09-22。上游基线 `d872052`，fork 为 `N0tANTi/jev-chat-jarvis`，
-工作分支 `codex/session-safety-fixes`。
+Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `codex/desktop-mineru-trial`。
+
+## Windows 桌面试用版（2026-09-22）
+
+- 已新增 `desktop/`：手动框选或导入截图、预览、MinerU VLM OCR、编辑核对发言人、
+  DeepSeek `deepseek-flash` 非思考模式起草三条、TypeSafe Jev 判断排序、复制候选。
+- 启动不采集、不上传；用户点击识别才上传裁剪图，点击生成才发送核对后的文字。
+  本机现有 `.env` 通过本地忽略的启动脚本引用，无需重新填写密钥。
+- 编辑、新截图、清空取消旧任务并废弃迟到结果；本版不跟踪当前联系人、不自动填入或发送。
+- 本地 21 项单元/状态测试通过。完整链路仅用合成图片实测：三条文字和方向均正确，
+  三条候选生成并排序；一次样例 OCR 2.71 秒，总耗时 4.62 秒。不能推断日常稳定延迟。
+- 本机 Python 3.13.14、Pillow 12.2.0；窗口已启动并通过窗口枚举确认。
+  Windows 控制工具截图失败：`SetIsBorderRequired failed: 0x80004002`，未完成视觉验收，
+  不等同于产品自身截屏失败。真实微信框选、混合 DPI / 多屏和复制操作待用户试用。
+- 本机微信 4.1.15.10 的 UIA 预检未读到消息正文，当前使用截图方案，尚未集成微信 MCP。
+- 桌面运行手册见 [desktop/README.md](desktop/README.md)，
+  里程碑见 [桌面历史记录](docs/history/2026-09-22-desktop-trial.md)。
 
 ## 已实现
 

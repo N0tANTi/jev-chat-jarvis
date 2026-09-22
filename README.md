@@ -4,6 +4,10 @@
 > 安装与验证请看 [修复版试用手册](docs/runbooks/android-trial.md) 和
 > [当前状态](CURRENT_STATE.md)。下文及 `apk/` 中的上游安装包不包含这些修复。
 
+> **Windows 桌面试用版**位于 `codex/desktop-mineru-trial` 分支的 `desktop/`。
+> 支持手动框选聊天 → MinerU OCR → DeepSeek Flash 起草 → Jev 排序 → 复制回复。
+> 无需手机配置，使用本机 `.env`。启动与数据边界见 [桌面使用说明](desktop/README.md)。
+
 **装在手机上的「对话副驾」：你在任何聊天 App 里聊天，它在旁边读懂对方、告诉你该怎么回，一键填进输入框，发不发由你。**
 
 已在 **微信、QQ、X（Twitter 私信）** 三个平台真机跑通，飞书采集已接入。一套内核，一个 App 一个几十行的适配器。
