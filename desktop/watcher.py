@@ -19,6 +19,20 @@ def header_matches(reference, current):
     return reference.size == current.size and signature(reference) == signature(current)
 
 
+def foreground_weixin(hwnd):
+    """User-requested capture may foreground only the selected Weixin window."""
+    from desktop.accessibility_probe import weixin_windows
+    if hwnd not in weixin_windows():
+        raise ServiceError("原微信窗口已关闭，请重新读取。")
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.SetForegroundWindow(hwnd)
+    if user32.GetForegroundWindow() != hwnd:
+        raise ServiceError("无法置前微信，请手动打开原单聊后重试。")
+
+
 class SettledFrames:
     def __init__(self, settle=1.5, cooldown=5):
         self.settle, self.cooldown = settle, cooldown

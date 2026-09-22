@@ -50,3 +50,7 @@
   Calibration is session-only, not proof of future OCR accuracy; ambiguous output
   pauses. No automatic memory writes or sends. Native-only automatic generation
   remains unavailable without reliable sender metadata.
+- User authorized automatic speaker suggestions when opening the review panel.
+  This explicit action may foreground the selected Weixin window and upload its
+  guarded message crop to MinerU. Preserve native text and manual choices; leave
+  ambiguous/duplicate matches unassigned. Never capture/upload on application startup.

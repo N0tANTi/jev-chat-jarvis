@@ -46,7 +46,7 @@ def open_review(app):
     dialog = tk.Toplevel(app.root)
     dialog.title("校对一次 · 自动更新建议")
     dialog.geometry("760x600")
-    ttk.Label(dialog, text="逐条点选发言人；图片、语音、系统提示选忽略。无需手改前缀。", padding=12).pack(anchor="w")
+    ttk.Label(dialog, text="自动识别会上传本次消息区到 MinerU，预选我 / 对方；请检查，未确认项再点选。", padding=12).pack(anchor="w")
     area = ttk.Frame(dialog)
     area.pack(fill="both", expand=True)
     canvas = tk.Canvas(area, highlightthickness=0)
@@ -66,8 +66,11 @@ def open_review(app):
         choices.append(choice)
         for label in ("我", "对方", "忽略"):
             ttk.Radiobutton(line, text=label, value=label, variable=choice).pack(side="left", padx=5)
+        ttk.Label(line, textvariable=choice, width=6).pack(side="left", padx=3)
     notes = tk.StringVar(value="自动运行会将消息截图发送 MinerU，将文字发送 DeepSeek / TypeSafe。\n保持微信前台可见；生成建议后由你复制发送。自动内容不写入好友记忆。")
     ttk.Label(dialog, textvariable=notes, wraplength=710, padding=12).pack(anchor="w")
+    from desktop.speaker_prefill import attach_prefill
+    attach_prefill(app, dialog, binding, snapshot, choices, notes, epoch)
 
     def finish(automatic):
         if app.direct_epoch != epoch:
