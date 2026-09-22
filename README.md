@@ -1,5 +1,9 @@
 # Jev 聊天助手 (Jev Chat Assistant)
 
+> 本 fork 的会话安全修复在 `codex/session-safety-fixes` 分支。
+> 安装与验证请看 [修复版试用手册](docs/runbooks/android-trial.md) 和
+> [当前状态](CURRENT_STATE.md)。下文及 `apk/` 中的上游安装包不包含这些修复。
+
 **装在手机上的「对话副驾」：你在任何聊天 App 里聊天，它在旁边读懂对方、告诉你该怎么回，一键填进输入框，发不发由你。**
 
 已在 **微信、QQ、X（Twitter 私信）** 三个平台真机跑通，飞书采集已接入。一套内核，一个 App 一个几十行的适配器。
