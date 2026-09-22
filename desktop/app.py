@@ -8,12 +8,13 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageGrab, ImageTk
 
 from desktop.service import (Generation, KEY_NAMES, MAX_IMAGE_PIXELS, ServiceError,
                              analyze, load_keys, parse_transcript, recognize, to_transcript)
+from desktop.memory import ProfileStore, analyze_profile
 
 BG = "#f4f5f2"
 INK = "#182d2a"
@@ -31,6 +32,9 @@ class App:
         self.replies = []
         self.suppress_edit = False
         self.closed = False
+        self.store = ProfileStore()
+        self.contact_id = None
+        self.contact_choices = {}
         root.title("Jev 桌面助手 · 试用版")
         root.geometry("1100x820")
         root.minsize(960, 730)
@@ -93,6 +97,16 @@ class App:
         self.relationship = tk.StringVar(value="")
         ttk.Entry(context, textvariable=self.relationship, font=("Microsoft YaHei UI", 10)).pack(side="left", fill="x", expand=True)
         self.relationship.trace_add("write", lambda *_: self.invalidate())
+        friend_row = ttk.Frame(shell)
+        friend_row.pack(fill="x", pady=(0, 8))
+        ttk.Label(friend_row, text="当前好友档案").pack(side="left", padx=(0, 12))
+        self.contact_label = tk.StringVar(value="不使用好友记忆")
+        self.contact_combo = ttk.Combobox(friend_row, textvariable=self.contact_label, state="readonly", width=35)
+        self.contact_combo.pack(side="left", fill="x", expand=True)
+        self.contact_combo.bind("<<ComboboxSelected>>", lambda _: self.select_contact(self.contact_choices.get(self.contact_label.get())))
+        from desktop.profile_ui import open_profiles
+        ttk.Button(friend_row, text="角色 / 好友记忆", command=lambda: open_profiles(self)).pack(side="left", padx=8)
+        self.refresh_contacts()
         self.insight = tk.StringVar(value="回复建议将显示在下方；这些是模型推测，请结合实际语境判断。")
         ttk.Label(shell, textvariable=self.insight, foreground=MUTED, wraplength=1000).pack(anchor="w", pady=(0, 6))
         self.cards = []
@@ -105,7 +119,7 @@ class App:
             button = ttk.Button(frame, text="复制", command=lambda n=i: self.copy_reply(n), state="disabled")
             button.pack(side="right", padx=(12, 0))
             self.cards.append((label, button))
-        ttk.Label(shell, text="不自动发送 · 不读取微信数据库 · 关闭后清除本次内存内容", foreground=MUTED).pack(anchor="w", pady=(10, 0))
+        ttk.Label(shell, text="不自动发送 · 不读取微信数据库 · 好友档案仅在你保存或开启学习后落盘", foreground=MUTED).pack(anchor="w", pady=(10, 0))
         root.after(100, self.poll)
 
     def invalidate(self):
@@ -230,11 +244,14 @@ class App:
             button.configure(state="disabled" if busy else "normal")
         self.ocr_btn.configure(state="normal" if self.picture is not None and not busy else "disabled")
 
-    def start_job(self, kind, operation):
+    def start_job(self, kind, operation, *, preserve_replies=False):
         if self.worker is not None and self.worker.is_alive():
             self.status.set("上个请求还在收尾，请稍候。")
             return
-        self.invalidate()
+        if preserve_replies:
+            self.generation.invalidate()
+        else:
+            self.invalidate()
         revision, cancel = self.generation.revision, self.generation.cancel
 
         def progress(text):
@@ -267,9 +284,50 @@ class App:
             if not self.reviewed.get():
                 raise ServiceError("请先核对文字与发言人，再勾选核对完成。")
             relationship = self.relationship.get().strip()[:500] or "unspecified"
-            self.start_job("analysis", lambda cancel, progress: analyze(messages, relationship, self.keys, cancel, progress))
+            cid = self.contact_id
+            background = self.store.context(cid)
+            profile = self.store.get(cid) if cid else None
+            should_learn = False
+            if profile and profile["learn"]:
+                should_learn = self.store.append(cid, messages)
+                profile = self.store.get(cid)
+            def operation(cancel, progress):
+                result = analyze(messages, relationship, self.keys, cancel, progress, memory=background)
+                result["learn_contact"] = (cid, profile["version"]) if should_learn else None
+                return result
+            self.start_job("analysis", operation)
         except ServiceError as exc:
             self.status.set(str(exc))
+
+    def refresh_contacts(self):
+        self.contact_choices = {"不使用好友记忆": None}
+        for cid, p in self.store.data["contacts"].items():
+            self.contact_choices[f"{p['name']} · {cid[:6]}"] = cid
+        self.contact_combo.configure(values=list(self.contact_choices))
+        self.contact_label.set(next((name for name, cid in self.contact_choices.items() if cid == self.contact_id), "不使用好友记忆"))
+
+    def select_contact(self, cid):
+        # OCR carries no stable contact identity; switching always clears the snapshot.
+        self.clear()
+        self.relationship.set("")
+        self.contact_id = cid
+        self.refresh_contacts()
+        self.status.set("已切换档案并清空旧聊天，请为当前好友重新截图或粘贴消息。")
+
+    def learn_profile(self, cid, notes=None, *, expected=None):
+        if self.worker is not None and self.worker.is_alive():
+            if notes:
+                notes.set("上个请求还在收尾，请稍后再分析。")
+            return
+        profile = self.store.get(cid)
+        if expected is not None and profile["version"] != expected:
+            return
+        version = profile["version"]
+        if notes:
+            notes.set("正在分析已保存的历史；完成后点击「刷新观察」。")
+        # Memory jobs must not erase the reply cards that just arrived.
+        self.start_job("memory", lambda cancel, progress: (cid, version, analyze_profile(
+            profile, self.keys["DEEPSEEK_API_KEY"], cancel, progress)), preserve_replies=True)
 
     def poll(self):
         if self.closed:
@@ -294,6 +352,17 @@ class App:
                     names = {"confirm_you_care": "希望被重视", "vent_anger": "表达不满", "request_action": "希望采取行动", "seek_explanation": "想了解原因", "casual_chat": "日常聊天", "close_topic": "准备结束话题"}
                     self.insight.set("Jev 推测：" + names.get(intent, "请结合语境判断") + "。推荐仅供参考，不代表对方的真实心理。")
                     self.status.set(f"{time.strftime('%H:%M:%S')} 已生成 · 基于本次快照。聊天有变化时请重新识别；复制后由你粘贴发送。")
+                    followup = value.get("learn_contact")
+                    if followup:
+                        rev = self.generation.revision
+                        self.root.after(150, lambda r=rev, pair=followup: self.learn_profile(pair[0], expected=pair[1]) if self.generation.current(r) else None)
+                elif kind == "memory":
+                    cid, version, observation = value
+                    try:
+                        applied = self.store.apply(cid, version, observation)
+                        self.status.set("好友观察已更新（模型推测）。在「角色 / 好友记忆」中刷新查看依据。" if applied else "档案已修改，本次旧分析未写入。")
+                    except (ServiceError, OSError):
+                        self.status.set("档案更新未保存，请检查是否有其他程序窗口同时修改。")
         except queue.Empty:
             pass
         self.update_buttons()
@@ -333,7 +402,12 @@ def main():
         pass
     root = tk.Tk()
     keys = load_keys(args.env_file or Path(__file__).parent / ".env")
-    app = App(root, keys)
+    try:
+        app = App(root, keys)
+    except ServiceError as exc:
+        messagebox.showerror("无法加载好友档案", str(exc), parent=root)
+        root.destroy()
+        return
     if args.demo:
         from desktop.smoke import synthetic_image
         app.set_picture(synthetic_image())

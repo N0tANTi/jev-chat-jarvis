@@ -1,0 +1,5 @@
+# Optional diagnostics only. Activation is required before real message access.
+# wxauto-mcp 1.0.2 breaks on MCP SDK 2.x (Server.list_tools was removed).
+wxautox4==41.1.1.post1
+wxauto-mcp==1.0.2
+mcp==1.30.0

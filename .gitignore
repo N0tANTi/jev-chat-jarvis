@@ -44,3 +44,6 @@ keystore.properties
 .env.*
 /desktop/start-local.cmd
 /desktop/.venv/
+/desktop/data/
+profiles.json
+profiles.lock

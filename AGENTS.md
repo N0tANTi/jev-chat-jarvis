@@ -27,3 +27,10 @@
 - Desktop validation: `python -m unittest discover -s desktop/tests -v`.
   Live smoke: `python -m desktop.smoke --env-file <local path>` uses synthetic data only.
 - Desktop runbook: `desktop/README.md`; history: `docs/history/2026-09-22-desktop-trial.md`.
+- User requested persona + per-friend history/tag learning. Explicitly saved profiles and
+  opt-in reviewed chat learning persist in `%LOCALAPPDATA%/JevDesktop/profiles.json`.
+  Imported history/profile context may be sent to DeepSeek/TypeSafe when the user runs
+  analysis/generation. No automatic capture or real-message monitoring is enabled yet.
+- Keep confirmed user facts separate from evidence-backed model hypotheses. Contact
+  identity is an explicit local UUID; never auto-merge contacts by display name.
+- Current wxauto diagnostics are in `docs/runbooks/wxauto-diagnostics.md`.
