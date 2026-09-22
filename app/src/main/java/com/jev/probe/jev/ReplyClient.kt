@@ -78,6 +78,13 @@ class ReplyClient(private val prefs: Prefs) {
             .put("model", prefs.replyModel)
             .put("messages", messages)
             .put("temperature", temperature)
+        // Flash defaults to extended thinking; short chat drafts use non-thinking
+        // mode. Keep the provider-specific parameter off other compatible APIs.
+        if (java.net.URI(url).host.equals("api.deepseek.com", ignoreCase = true) &&
+            prefs.replyModel == Prefs.DEEPSEEK_MODEL) {
+            body.put("thinking", JSONObject().put("type", "disabled"))
+            body.put("max_tokens", 512)
+        }
         val resp = HttpJson.post(url, prefs.effectiveReplyKey(), body, Route.REPLY, HttpJson.headersFor(url))
         return resp.optJSONArray("choices")?.optJSONObject(0)
             ?.optJSONObject("message")?.optString("content") ?: ""

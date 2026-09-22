@@ -31,6 +31,15 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         val legacy = sp.getString(K_LEGACY_KEY, "") ?: ""
         val current = sp.getString(K_JUDGE_KEY, "") ?: ""
         val e = sp.edit().putBoolean(K_MIGRATED_V13, true)
+        // Fresh installs of this fork use the user's selected provider pair.
+        // Existing configurations and the legacy OpenRouter migration stay intact.
+        if (legacy.isBlank() && current.isBlank() && !sp.contains(K_JUDGE_PROVIDER)) {
+            e.putString(K_JUDGE_PROVIDER, PROVIDER_TYPESAFE)
+                .putString(K_JUDGE_BASE, DEFAULT_JUDGE_BASE_TYPESAFE)
+                .putString(K_JUDGE_MODEL, DEFAULT_JUDGE_MODEL_TYPESAFE)
+            if (!sp.contains(K_REPLY_BASE)) e.putString(K_REPLY_BASE, DEEPSEEK_BASE)
+            if (!sp.contains(K_REPLY_MODEL)) e.putString(K_REPLY_MODEL, DEEPSEEK_MODEL)
+        }
         if (current.isBlank() && legacy.isNotBlank()) {
             e.putString(K_JUDGE_KEY, legacy)
             Log.i(TAG, "prefs migrated judgeKey.len=${legacy.length}")
@@ -280,7 +289,7 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         const val DEFAULT_REPLY_BASE = "https://openrouter.ai/api/v1"
         const val DEFAULT_REPLY_MODEL = "deepseek/deepseek-chat-v3.1"
         const val DEEPSEEK_BASE = "https://api.deepseek.com/v1"
-        const val DEEPSEEK_MODEL = "deepseek-chat"
+        const val DEEPSEEK_MODEL = "deepseek-flash"
         const val DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         const val DASHSCOPE_MODEL = "qwen-plus"
 
