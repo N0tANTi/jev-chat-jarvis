@@ -6,11 +6,33 @@ rows deliberately remain unassigned until the user reviews them.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 from desktop.service import ServiceError
+
+
+CAUSES = {
+    "window closed": "window_closed", "window replaced": "window_changed",
+    "chat changed": "window_changed", "unknown row": "unknown_row",
+    "unsupported row": "invalid_text", "empty or large snapshot": "invalid_text",
+    "message list unavailable": "missing_list", "only independent single chats": "unsupported_chat",
+    "invalid tree": "unstable_tree", "tree budget": "unstable_tree", "child budget": "unstable_tree",
+}
+ERRORS = {
+    "window_closed": "原微信窗口已关闭或不可见，请重新打开并选择单聊。",
+    "window_changed": "原微信窗口身份已变化，请重新读取并绑定；没有继续使用旧聊天。",
+    "unknown_row": "消息列表出现尚不支持的项目，已暂停；请反馈此提示，不需要重新配置 API。",
+    "invalid_text": "当前列表文字为空、不可读取或过长，请调整可见聊天区域后重试。",
+    "missing_list": "未找到消息列表；请确认独立单聊窗口已加载，必要时使用兼容启动。",
+    "unsupported_chat": "当前窗口不是支持的独立单聊，请重新选择。",
+    "unstable_tree": "微信控件正在变化或超出读取范围，请稍后重新读取。",
+    "uia_failure": "微信无障碍接口查询失败，请稍后重试；未读取或提交新的聊天结果。",
+    "timeout": "微信直读超过 12 秒，已停止本次读取；请稍后重试。",
+    "worker_failure": "直读子进程未正常返回，请重启助手后重试。",
+}
 
 
 def walk(root, walker, limit=1024):
@@ -47,9 +69,14 @@ def collect(root, walker):
     rows = []
     for element in walk(lists[0], walker):
         if element.CurrentControlType == 50007:
-            if element.CurrentAutomationId != "chat_message_list.qt_scrollarea_viewport.chat_bubble_item_view":
-                raise ValueError("unknown row")
+            aid = element.CurrentAutomationId
             text = element.CurrentName
+            # Observed Weixin time separator: ListItem, empty AutomationId, HH:MM.
+            # A genuine bubble containing a time is still a message.
+            if not aid and isinstance(text, str) and re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", text.strip()):
+                continue
+            if aid != "chat_message_list.qt_scrollarea_viewport.chat_bubble_item_view":
+                raise ValueError("unknown row")
             if not isinstance(text, str) or not text.strip() or len(text) > 20000:
                 raise ValueError("unsupported row")
             rows.append(text)
@@ -86,11 +113,17 @@ def request(action, binding=None):
             input=json.dumps(binding), capture_output=True, encoding="utf-8",
             timeout=12, cwd=Path(__file__).resolve().parent.parent,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        payload = json.loads(result.stdout)
         if result.returncode:
-            raise ValueError("reader failed")
-        return json.loads(result.stdout)
+            code = payload.get("error_code") if isinstance(payload, dict) else None
+            raise ServiceError(ERRORS.get(code, ERRORS["worker_failure"]))
+        return payload
+    except ServiceError:
+        raise
+    except subprocess.TimeoutExpired:
+        raise ServiceError(ERRORS["timeout"]) from None
     except Exception:
-        raise ServiceError("直接读取未完成：请保持独立单聊窗口打开；确认已使用兼容启动，或改用截图。") from None
+        raise ServiceError(ERRORS["worker_failure"]) from None
 
 
 def native(action, binding):
@@ -122,5 +155,8 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
         payload = native(sys.argv[1], json.loads(sys.stdin.read()))
         sys.stdout.write(json.dumps(payload, ensure_ascii=True))
-    except Exception:
+    except Exception as exc:
+        # Only allowlisted codes cross the process boundary, never exception text.
+        if sys.stdout is not None:
+            sys.stdout.write(json.dumps({"error_code": CAUSES.get(str(exc), "uia_failure")}))
         sys.exit(1)

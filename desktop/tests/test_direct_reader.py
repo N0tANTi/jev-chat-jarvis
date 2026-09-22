@@ -40,6 +40,30 @@ def tree(identity="ChatSingleWindow_synthetic", names=("hello", "world")):
 
 
 class DirectReaderTests(unittest.TestCase):
+    def test_clock_separator_without_id_is_skipped(self):
+        root = tree(names=("first", "last"))
+        a, b = root.children[0].children
+        root.children[0] = Element("chat_message_list", 50008, children=[a, Element("", 50007, "12:34"), b])
+        self.assertEqual(collect(root, Walker())["rows"], ["first", "last"])
+
+    def test_time_inside_real_bubble_is_preserved(self):
+        self.assertEqual(collect(tree(names=("12:34",)), Walker())["rows"], ["12:34"])
+
+    def test_unknown_no_id_row_is_not_silently_dropped(self):
+        for text in ("system notice", "25:61", "tomorrow 12:34"):
+            root = tree(names=(text,))
+            root.children[0].children[0].CurrentAutomationId = ""
+            with self.assertRaises(ValueError):
+                collect(root, Walker())
+
+    def test_worker_error_is_specific_but_private_detail_never_shown(self):
+        result = MagicMock(returncode=1, stdout='{"error_code":"unknown_row","detail":"private"}')
+        with patch("desktop.direct_reader.subprocess.run", return_value=result):
+            with self.assertRaises(ServiceError) as caught:
+                request("read", {})
+            self.assertIn("尚不支持的项目", str(caught.exception))
+            self.assertNotIn("private", str(caught.exception))
+
     def test_order_and_duplicates_preserved_without_guessing_sender(self):
         value = collect(tree(names=("a", "b", "a")), Walker())
         self.assertEqual(value["rows"], ["a", "b", "a"])
