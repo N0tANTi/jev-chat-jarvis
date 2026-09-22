@@ -12,6 +12,8 @@ Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `co
 - 编辑、新截图、清空取消旧任务并废弃迟到结果；本版不跟踪当前联系人、不自动填入或发送。
 - 本地 21 项单元/状态测试通过。完整链路仅用合成图片实测：三条文字和方向均正确，
   三条候选生成并排序；一次样例 OCR 2.71 秒，总耗时 4.62 秒。不能推断日常稳定延迟。
+- 桌面代码提交 `c69199c` 已推送，Windows GitHub CI 的 21 项测试也通过：
+  [Desktop trial #35700001335](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35700001335)。
 - 本机 Python 3.13.14、Pillow 12.2.0；窗口已启动并通过窗口枚举确认。
   Windows 控制工具截图失败：`SetIsBorderRequired failed: 0x80004002`，未完成视觉验收，
   不等同于产品自身截屏失败。真实微信框选、混合 DPI / 多屏和复制操作待用户试用。

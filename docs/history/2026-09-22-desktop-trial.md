@@ -19,6 +19,8 @@
 ## 验证与局限
 
 - 本地 `python -m unittest discover -s desktop/tests -v`：21 tests，OK。
+- 提交 `c69199c` 已推送至 `codex/desktop-mineru-trial`；
+  [Windows CI](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35700001335) 同样通过。
 - 合成图 MinerU 识别 3/3 文字与发言方向正确；DeepSeek 三条候选、Jev 排序通过。
   一次总耗时 4.62 秒（其中 OCR 2.71 秒），可能受缓存/排队影响，不是性能承诺。
 - 实测发现 DeepSeek 有时返回带 `text` 字段的对象数组；明确字符串数组提示词，并兼容该
