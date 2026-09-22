@@ -13,6 +13,8 @@ Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `co
   自动 OCR 不写长期记忆；角色与已选好友档案仍参与生成。没有自动填入或发送。
 - 本地 45 项测试通过（9 项新增合成画面/状态测试），没有采集或上传真实微信正文。
   新流程尚待用户在微信 4.1.15.10 实测，不能宣称已完成原生消息接口适配。
+- 代码 `59f96f2` 已推送，Windows CI 通过：
+  [Desktop trial #35703518438](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35703518438)。
 - 依赖可见前台窗口、云端 OCR 延迟；像素标题不等于稳定联系人身份，同名/短暂切换/局部遮挡
   仍可能漏检。仅单聊试用。操作与回退见 [桌面说明](desktop/README.md#自动更新试用无需-plus)。
 - 决策与验证见 [本次记录](docs/history/2026-09-22-visible-watcher.md)。
