@@ -58,3 +58,27 @@ v2 代码 `dda76f4` 已同步至 fork；[Windows CI](https://github.com/N0tANTi/
 通过 57 项测试和双接口初始化检查，实机结果仍待用户运行。
 
 操作、限制和回退见 [诊断手册](../runbooks/wxauto-diagnostics.md)，任务见 [路线图](../../ROADMAP.md)。
+
+## v2 实测与启动模式线索
+
+用户完成 v2，摘要更新时间 2026-09-22 16:42:33：2 个顶层窗口，各 1 个原生子窗口，
+共 20 组测量。UIA 三视图均只有顶层 Window+Pane（2 节点）及子窗口 Pane（1 节点）；
+MSAA 顶层 24/46 节点，子窗口 1/23 节点。全部 0 错误，无截断/超时，未暴露消息类型。
+这不是“因工具超时没读完”，也不是已经证明所有启动模式或账号都无法使用。
+
+继续核查发现：
+
+- [Qt 5.15 Windows UIA 源码](https://github.com/qt/qtbase/blob/5.15/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp)
+  在处理 WM_GETOBJECT 时调用无障碍 setActive，再尝试返回 accessibleRoot。
+  这解释了标准请求本应尝试激活，但不能证明微信使用未修改的这份 Qt 实现。
+- [Qt 文档](https://doc.qt.io/qt-6/qaccessible.html) 的 `QT_LINUX_ACCESSIBILITY_ALWAYS_ON`
+  针对 Unix/X11，不能拿来当 Windows 微信的修复开关。
+- pywechat #264 的 [成功报告](https://github.com/Hello-Mr-Crab/pywechat/issues/264#issuecomment-4740890103)
+  提出以 `--disable-gpu` 启动；另有 [失败报告](https://github.com/Hello-Mr-Crab/pywechat/issues/264#issuecomment-4742517984)。
+  只是可测试假设，没有确认本机 4.1.15.10 接受该参数，也不能声称禁用 GPU 就会取消 Qt 或暴露消息。
+- [#283](https://github.com/Hello-Mr-Crab/pywechat/issues/283) 继续报告讲述人无效，作者归因于账号/缓存；
+  没有腾讯侧证据验证本机原因。未改注册表、未切换账号、未安排第三方代登录。
+
+新增 `desktop/Start-WeChat-Compatibility.cmd` 供用户在方便时退出微信后启动实验。
+只给本次启动附加参数，不终止已运行微信，不写持久设置。已有进程时直接停止，避免参数未生效的假对照。
+本机安装路径存在已核实；脚本静态检查通过，尚未执行启动实验。运行后复用 v2，再按原快捷方式重启回退。

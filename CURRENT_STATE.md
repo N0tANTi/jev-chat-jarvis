@@ -13,7 +13,10 @@ Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `co
   角色分布一致，无错误或截断，没有列表/文本角色；未读取正文。不能把窗口外框当聊天内容。
 - 新增 v2 探针：同进程原生子窗口、UIA Raw/Control/Content 三视图及 MSAA 对照。
   45 秒总超时保留已完成样本和未完成目标；57 项测试及本机双 API 绑定加载通过。
-  v2 实机结果待用户运行，当前 Computer Use 工具未提供对应专用入口。
+  用户已实测 v2：两顶层及各自子窗口共 20 组测量，全部无错误/截断/超时；
+  UIA 仅 Window/Pane，MSAA 仅通用角色，仍未发现消息控件。
+- 发现有成功及失败反馈的 `--disable-gpu` 启动线索，准备了用户启动的临时实验入口
+  `desktop/Start-WeChat-Compatibility.cmd`。不终止现有微信、不改持久设置；尚未执行实验。
 - v2 代码 `dda76f4` 已推送；[Windows CI #35705963373](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705963373)
   的 57 项测试和双接口绑定加载检查通过。
 - 代码 `048dab9` 已推送；[Windows CI #35705089024](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705089024)

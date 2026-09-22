@@ -57,3 +57,18 @@ desktop/.venv/Scripts/python.exe -m pip install -r desktop/accessibility-require
 研究依据、未经验证的假设见 [新版读取研究](../history/2026-09-22-direct-read-research.md)。
 
 回退：主程序使用全局 Python，未依赖隔离环境中的 wxauto。保留隔离环境停用即可。
+
+## 可选启动参数实验（未验证修复）
+
+v2 已完成：两个顶层窗口及各自子窗口共 20 组测量，无错误/截断，仍仅通用窗口结构。
+下一假设来自 pywechat #264 的用户反馈：`--disable-gpu`，同时存在失败反馈。
+
+1. 保存正在编辑的内容，从微信托盘菜单正常退出（仅关闭窗口可能仍在后台运行）。
+2. 双击 `desktop/Start-WeChat-Compatibility.cmd`。已有 Weixin 进程时脚本会退出，不会强行结束它。
+3. 正常登录并打开同样的聊天，运行 `desktop/Diagnose-WeChat.cmd`，比较是否出现新的消息控件。
+4. 无变化就不重复相同实验。出现新控件也仍需后续验证正文、身份、方向、顺序和切换。
+5. 回退：正常退出微信，使用原来的微信快捷方式启动。脚本不改注册表、启动项或微信文件。
+
+当前启动器针对 `%ProgramFiles%/Tencent/Weixin/Weixin.exe`，本机路径已核实；不同安装路径会停止。
+这是临时启动参数试验，不保证微信识别参数、不保证 GPU 实际关闭、不保证恢复无障碍树。
+若渲染异常或卡顿，按回退步骤恢复；现有聊天数据无需搬动。程序未替用户执行退出或登录。
