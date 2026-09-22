@@ -11,6 +11,8 @@ Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `co
   只统计节点/数字角色，不读标题、聊天正文或数据库，不联网，无 Plus 依赖。
 - 51 项模拟/状态测试通过，本机 COM 绑定加载成功；尚未实际对微信运行 MSAA 探针。
   当前 Computer Use 工具没有 MSAA 专用接口，遵守工具使用边界，由用户启动实测。
+- 代码 `048dab9` 已推送；[Windows CI #35705089024](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705089024)
+  通过，包含 51 项测试及独立 COM 绑定加载检查，不包含真实微信 MSAA 查询。
 - 另一些新版项目依靠进程写入开启控件树、数据库解密读取消息；不作为当前项目的实现路线。
 - 研究证据与验收路径见 [研究记录](docs/history/2026-09-22-direct-read-research.md)，
   运行步骤见 [诊断手册](docs/runbooks/wxauto-diagnostics.md)。目前未接通新版直接读取。

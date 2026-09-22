@@ -29,6 +29,8 @@
 
 51 项测试通过，新增混合子对象/子 ID、环、数量/深度上限、错误与自定义角色脱敏、
 进程失败和超时测试。本机 comtypes 1.4.17 可加载接口；未执行真实窗口 MSAA 查询。
+代码 `048dab9` 已推送；[Windows CI](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35705089024)
+通过同一测试集和 COM 绑定加载检查。
 
 当前 Computer Use 只暴露统一窗口状态查询，不暴露单独 MSAA；技能要求桌面操作仅用其 JS API。
 故没有通过 shell 运行自写探针替代工具。将探针作为用户可运行的产品诊断入口交付，
