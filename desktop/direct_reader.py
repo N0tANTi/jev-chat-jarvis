@@ -57,7 +57,20 @@ def collect(root, walker):
         raise ValueError("empty or large snapshot")
     if root.CurrentAutomationId != identity:
         raise ValueError("chat changed")
-    return {"identity": identity, "rows": rows[-30:]}
+    result = {"identity": identity, "rows": rows[-30:]}
+    # Optional layout for the explicit calibrated OCR mode, never capture here.
+    try:
+        def box(element):
+            r = element.CurrentBoundingRectangle
+            return [int(r.left), int(r.top), int(r.right), int(r.bottom)]
+        titles = [e for e in walk(root, walker)
+                  if e.CurrentAutomationId.endswith(".current_chat_name_label")]
+        if len(titles) == 1:
+            result["message_box"] = box(lists[0])
+            result["title_box"] = box(titles[0])
+    except (AttributeError, TypeError):
+        pass
+    return result
 
 
 def preview(rows):
@@ -103,6 +116,8 @@ def native(action, binding):
 
 if __name__ == "__main__":
     try:
+        import ctypes
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
         sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")
         payload = native(sys.argv[1], json.loads(sys.stdin.read()))

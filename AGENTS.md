@@ -44,3 +44,9 @@
   by display name. Native text stays in memory until reviewed generation. Unknown
   speakers must remain unassigned; no native automatic cloud generation until sender
   detection is verified. Keep COM queries in a bounded child process.
+- User requested one-time review followed by automatic operation. The explicit
+  calibrated mode may locate screenshot regions from UIA, then use the existing
+  foreground OCR watcher after its first frame matches user-reviewed speakers/text.
+  Calibration is session-only, not proof of future OCR accuracy; ambiguous output
+  pauses. No automatic memory writes or sends. Native-only automatic generation
+  remains unavailable without reliable sender metadata.

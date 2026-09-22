@@ -38,6 +38,7 @@ class App:
         self.direct_epoch = 0
         self.direct_busy = False
         self.direct_rows = None
+        self.direct_snapshot = None
         self.auto_revision = None
         self.capture_box = None
         self.store = ProfileStore()
@@ -82,7 +83,9 @@ class App:
         native_bar.pack(fill="x", pady=(6, 0))
         ttk.Button(native_bar, text="直接读取微信（免 OCR）", command=self.choose_direct).pack(side="left")
         ttk.Button(native_bar, text="停止读取", command=self.stop_direct).pack(side="left", padx=6)
-        ttk.Label(native_bar, text="独立单聊窗口 · 本地更新 · 发言人需核对", foreground=MUTED).pack(side="left")
+        from desktop.calibration import open_review
+        ttk.Button(native_bar, text="校对一次 → 自动运行", command=lambda: open_review(self)).pack(side="left", padx=6)
+        ttk.Label(native_bar, text="首次点选发言人，之后自动识别新消息", foreground=MUTED).pack(side="left")
 
         self.status = tk.StringVar(value="先截取单聊消息区域，排除标题、时间、联系人列表和输入框。也可以直接粘贴聊天文字。")
         ttk.Label(shell, textvariable=self.status, wraplength=1010, foreground=TEAL).pack(anchor="w", pady=12)
@@ -142,6 +145,7 @@ class App:
     def stop_direct(self):
         self.direct = None
         self.direct_rows = None
+        self.direct_snapshot = None
         self.direct_epoch = getattr(self, "direct_epoch", 0) + 1
         self.invalidate()
 
@@ -209,12 +213,58 @@ class App:
                 self.set_transcript("")
                 self.status.set("聊天身份变化，已停止并清空。")
                 return
+            self.direct_snapshot = value
             if value["rows"] != self.direct_rows:
                 from desktop.direct_reader import preview
                 self.invalidate()
                 self.direct_rows = value["rows"]
                 self.set_transcript(preview(value["rows"]))
-                self.status.set("已直接读取并在本地更新。请把每条「待确认：」改成「我：」或「对方：」，删除非文字消息后勾选核对；编辑时会停止更新。")
+                self.status.set("已读取。点击「校对一次 → 自动运行」，点选我 / 对方 / 忽略，无需手改前缀。")
+
+    def start_calibrated(self, native, snapshot, reference, ignored):
+        self.stop_watch()
+        epoch = self.direct_epoch
+        self.root.withdraw()
+
+        def bind():
+            try:
+                if epoch != self.direct_epoch or self.closed:
+                    return
+                binding = WindowBinding(snapshot["message_box"], snapshot["title_box"])
+                if binding.hwnd != native["hwnd"]:
+                    raise ServiceError("原单聊窗口已移动或被遮挡，请保持微信在助手后方再重试。")
+                if not binding.ready():
+                    raise ServiceError("请保持该微信单聊在助手后方、前台可见，再重新读取和校对。")
+                title = binding.grab(binding.title_box)
+                if not binding.ready():
+                    raise ServiceError("窗口在绑定时变化，请重新读取。")
+                self.watch = {"binding": binding, "title": title, "frames": SettledFrames(),
+                              "last_seen": None, "native": native, "reference": reference,
+                              "ignored": ignored, "calibrated": False}
+                self.capture_box = tuple(snapshot["message_box"])
+                self.watch_btn.configure(text="停止自动更新")
+                self.status.set("回到该微信单聊并保持前台。首次识别通过校对对照后，会自动更新回复建议。")
+            except (ServiceError, OSError, KeyError) as exc:
+                self.stop_watch()
+                self.status.set(str(exc) if isinstance(exc, ServiceError) else "自动绑定失败，请重新读取。")
+            finally:
+                if not self.closed:
+                    self.root.deiconify()
+
+        self.root.after(350, bind)
+
+    def recognize_watched(self, watch, picture, cancel, progress):
+        from desktop.direct_reader import request
+        native = watch.get("native")
+        before = request("read", native) if native else None
+        if cancel.is_set():
+            raise ServiceError("已取消。")
+        text = to_transcript(recognize(picture, self.keys["MINERU_API_TOKEN"], cancel, progress), picture)
+        if native:
+            after = request("read", native)
+            if before["rows"] != after["rows"]:
+                return None  # Retry the newest frame without another human review.
+        return text
 
     def invalidate(self):
         self.generation.invalidate()
@@ -391,8 +441,8 @@ class App:
                         watch["frames"].submitted(frame, now)
                         self.picture = picture
                         self.show_picture()
-                        self.start_job("auto_ocr", lambda cancel, progress, img=picture: to_transcript(
-                            recognize(img, self.keys["MINERU_API_TOKEN"], cancel, progress), img))
+                        self.start_job("auto_ocr", lambda cancel, progress, img=picture, w=watch:
+                                       self.recognize_watched(w, img, cancel, progress))
                 else:
                     # Foreground changes can conceal chat switches. Discard pending work.
                     if self.auto_revision is not None:
@@ -540,20 +590,36 @@ class App:
                         self.stop_watch()
                     self.status.set(value)
                 elif kind in ("ocr", "auto_ocr"):
+                    if kind == "auto_ocr" and value is None:
+                        self.invalidate()
+                        self.watch["frames"].processed = None
+                        self.auto_revision = None
+                        self.status.set("识别期间有新消息，等待最新画面稳定后自动重试。")
+                        continue
                     self.set_transcript(value)
                     self.status.set("识别完成。请核对发言人，删除标题 / 时间 / 系统提示，然后生成回复。")
                     if kind == "auto_ocr" and self.watch:
                         try:
+                            first_frame = self.watch.get("reference") is not None and not self.watch.get("calibrated")
+                            if first_frame:
+                                from desktop.calibration import remove_ignored_first_frame
+                                value = remove_ignored_first_frame(value, self.watch["ignored"])
                             messages = parse_transcript(value)
+                            if first_frame:
+                                from desktop.calibration import validate_first_frame
+                                validate_first_frame(self.watch["reference"], messages, self.watch["ignored"])
+                                self.watch["calibrated"] = True
+                                messages = self.watch["reference"]
+                                self.set_transcript("\n".join(("我：" if m["from"] == "me" else "对方：") + m["text"] for m in messages))
                             if messages[-1]["from"] == "other":
                                 rev = self.generation.revision
                                 self.root.after(150, lambda r=rev: self.generate_automatic(r))
                             else:
                                 self.auto_revision = None
                                 self.status.set("识别到最后一句来自我，继续等待对方消息。")
-                        except ServiceError:
+                        except ServiceError as exc:
                             self.stop_watch()
-                            self.status.set("识别存在待确认的发言人，已暂停自动模式；请核对文字。")
+                            self.status.set(str(exc))
                 elif kind in ("analysis", "auto_analysis"):
                     self.auto_revision = None
                     self.replies = value["candidates"]
