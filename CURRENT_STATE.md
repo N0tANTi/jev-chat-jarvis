@@ -3,7 +3,19 @@
 日期：2026-09-22。上游基线 `d872052`，fork 为 `N0tANTi/jev-chat-jarvis`，
 Android 修复分支 `codex/session-safety-fixes`；当前桌面开发分支 `codex/desktop-mineru-trial`。
 
-## 独立自动采集试用（2026-09-22 最新）
+## 新版直接读取研究（2026-09-22 最新）
+
+- 在不降级、不修改微信的前提下复核开源实现。标准桌面工具置前前后都返回 3 行 UIA 结构，
+  无消息列表、文档文字或焦点元素。仅说明该入口未取到内容，不能证明所有原生接口都无效。
+- 找到 MSAA 备用无障碍入口，新增用户启动的结构探针 `desktop/Diagnose-WeChat.cmd`；
+  只统计节点/数字角色，不读标题、聊天正文或数据库，不联网，无 Plus 依赖。
+- 51 项模拟/状态测试通过，本机 COM 绑定加载成功；尚未实际对微信运行 MSAA 探针。
+  当前 Computer Use 工具没有 MSAA 专用接口，遵守工具使用边界，由用户启动实测。
+- 另一些新版项目依靠进程写入开启控件树、数据库解密读取消息；不作为当前项目的实现路线。
+- 研究证据与验收路径见 [研究记录](docs/history/2026-09-22-direct-read-research.md)，
+  运行步骤见 [诊断手册](docs/runbooks/wxauto-diagnostics.md)。目前未接通新版直接读取。
+
+## 独立自动采集试用（2026-09-22 先前阶段）
 
 - 用户没有 Plus 授权，要求参考开源实现适配本机微信。只读 UIA 再检仅得到窗口根节点，
   无消息列表；开源 wxauto4 依赖的 `MessageView` / `ListControl` 无法定位。
