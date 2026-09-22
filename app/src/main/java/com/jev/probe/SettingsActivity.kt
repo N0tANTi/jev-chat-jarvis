@@ -180,6 +180,8 @@ class SettingsActivity : AppCompatActivity() {
             val model = replyModelEdit.text.toString().trim()
             val probe = draftPrefs(SCRATCH_REPLY) {
                 judgeKey = judgeKeyEdit.text.toString().trim()
+                judgeProvider = resolveJudgeProvider(judgeProviderIdx, judgeBaseEdit.text.toString().trim())
+                judgeBaseUrl = judgeBaseEdit.text.toString().trim().ifBlank { defaultJudgeBase(judgeProvider) }
                 replyBaseUrl = base.ifBlank { Prefs.DEFAULT_REPLY_BASE }
                 replyKey = replyKeyEdit.text.toString().trim()
                 replyModel = model.ifBlank { Prefs.DEFAULT_REPLY_MODEL }
@@ -236,6 +238,8 @@ class SettingsActivity : AppCompatActivity() {
             }
             val probe = draftPrefs(SCRATCH_VISION) {
                 judgeKey = judgeKeyEdit.text.toString().trim()
+                judgeProvider = resolveJudgeProvider(judgeProviderIdx, judgeBaseEdit.text.toString().trim())
+                judgeBaseUrl = judgeBaseEdit.text.toString().trim().ifBlank { defaultJudgeBase(judgeProvider) }
                 replyBaseUrl = replyBaseEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_BASE }
                 replyKey = replyKeyEdit.text.toString().trim()
                 visionBaseUrl = visionBase
