@@ -16,6 +16,7 @@
 
 - 本地 36 项测试通过；合成线上：initial_tags=2、updated_tags=3、确认事实保留、
   previous_versions=1、candidates=3、jev_ranked=true。
+- 提交 `e6b1ae7` 已推送；[Windows CI](https://github.com/N0tANTi/jev-chat-jarvis/actions/runs/35702176771) 成功。
 - wxautox4 41.1.1.post1、wxauto-mcp 1.0.2 在独立环境安装成功。MCP SDK 2.2.0 下
   `Server.list_tools` 缺失；固定 1.30.0 后 CLI help 成功。
 - 授权检查 `active: false`。没有购买/激活/降级，也未读取聊天、注入进程或注册发送工具。
